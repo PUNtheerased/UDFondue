@@ -654,14 +654,6 @@ export function ReportForm() {
                     </option>
                   ))}
                 </select>
-                {lfType === "แจ้งพบของหาย" && (
-                  <textarea
-                    className="w-full border rounded-xl px-3 py-2"
-                    placeholder="ข้อมูลลับยืนยันเจ้าของ (เช่น สีเคส/ของด้านใน) — ไม่แสดงสาธารณะ"
-                    value={lfSecretDetail}
-                    onChange={(e) => setLfSecretDetail(e.target.value)}
-                  />
-                )}
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"
