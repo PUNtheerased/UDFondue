@@ -92,6 +92,40 @@ export async function POST(req: NextRequest) {
         urgency: body.urgency || "ปกติ"
       });
 
+      // Mirror ลง Sheets สำรอง (ไม่ยิง LINE ที่นี่)
+      try {
+        await callGas({
+          action: "mirrorSubmit",
+          submitId,
+          lineId: lineAuth.sub,
+          name,
+          room,
+          studentNo,
+          category,
+          detail,
+          imageUrls,
+          imageCount: imageUrls.length,
+          isAnonymous: !!body.isAnonymous,
+          contactOptional: body.contactOptional || "",
+          building: body.building || "",
+          zone: body.zone || "",
+          locationNote: body.locationNote || "",
+          gpsLat: body.gpsLat || "",
+          gpsLng: body.gpsLng || "",
+          lfType: body.lfType || "",
+          lfWhen: body.lfWhen || "",
+          lfReturnPoint: body.lfReturnPoint || "",
+          lfSecretDetail: body.lfSecretDetail || "",
+          isPublicShowcase: body.isPublicShowcase !== false,
+          trackToken,
+          assignedGroup,
+          status: "รับเรื่องแล้ว",
+          imageStorage: "supabase"
+        });
+      } catch (mirrorErr) {
+        console.error("mirrorSubmit failed", mirrorErr);
+      }
+
       const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
       await notifyLine({
         kind: "submit",

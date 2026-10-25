@@ -40,7 +40,10 @@
 
 1. คัดลอก `Code.gs` ล่าสุด → Deploy → **New version**
 2. ใส่ Web App URL ใน `GAS_WEB_APP_URL`
-3. (ถ้าใช้กลุ่ม LINE) Script Properties: `GROUP_ID_FACILITY`, `GROUP_ID_LOST_FOUND`, `GROUP_ID_COUNCIL`, `GROUP_ID_GENERAL`
+3. Script Properties (Project Settings → Script properties):
+   - **`LINE_CHANNEL_ACCESS_TOKEN`** = Channel access token จาก LINE Developers → Messaging API (ถ้าขึ้น Authentication failed ให้ **Issue ใหม่** แล้วอัปเดตค่านี้)
+   - (ถ้าใช้กลุ่ม) `GROUP_ID_FACILITY`, `GROUP_ID_LOST_FOUND`, `GROUP_ID_COUNCIL`, `GROUP_ID_GENERAL`
+4. รัน `authorizeLinePush` หรือ `testLinePush` ใน Editor ครั้งหนึ่ง แล้ว Deploy New version อีกครั้ง
 
 ## 4) LINE LIFF
 

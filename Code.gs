@@ -6,7 +6,7 @@
  * การ Save อย่างเดียวไม่ทำให้ Web App URL ใช้โค้ดใหม่
  */
 
-const API_VERSION = "v11-full-upgrade";
+const API_VERSION = "v12-supabase-mirror";
 const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v11";
 const SHEET_REPAIR_CACHE_KEY = "sheet_repair_v8";
 const LOG_COLUMNS = 9;
@@ -14,7 +14,7 @@ const SPREADSHEET_ID = "19pIiTGsPMHbyTxULJDtiPbavmkCS07FBH2E5iHcd1KE";
 const SHEET_NAME = "UDFondue_Database";
 const LOG_SHEET_NAME = "UDFondue_Log";
 const FOLDER_ID = "1zP6mUhrI7q-Qf-bgA5c4HJwIYU6LnpyJ";
-const LINE_ACCESS_TOKEN = "1zQJQDz1un38gxqKc4Y91joSXB6oItmlQY9yG8EduB65R73XcMkHDkJ5pwBEkykFwWWgaRn4nv2sZer6yQglHR6UuJ/LE7Mqe1LsvhmUfKK/ABHu50jIpz6t8FxDuXcwNUo9q+RmWoXoqKUB9yZSIgdB04t89/1O/w1cDnyilFU=";
+/** อย่า hardcode token — ใส่ใน Script Properties: LINE_CHANNEL_ACCESS_TOKEN */
 const LIFF_TRACK_URL = "https://liff.line.me/2010319415-VtukiTkR";
 const LIFF_REPORT_URL = "https://liff.line.me/2010319415-epnUUdNV";
 const PUBLIC_TRACK_BASE = "https://ud-fondue.vercel.app/track";
@@ -22,6 +22,14 @@ const ADMIN_PASSWORD = "UDFondue123WoWoWo";
 const ADMIN_TOKEN_TTL_SEC = 28800;
 const DEFAULT_STATUS = "รับเรื่องแล้ว";
 const TZ = "GMT+7";
+
+function getLineAccessToken_() {
+  const props = PropertiesService.getScriptProperties();
+  const fromProps = String(props.getProperty("LINE_CHANNEL_ACCESS_TOKEN") || "").trim();
+  if (fromProps) return fromProps;
+  // fallback เก่า (ถ้ายังมีใน property อื่น)
+  return String(props.getProperty("LINE_ACCESS_TOKEN") || "").trim();
+}
 
 const STATUS_OPTIONS = [
   "รับเรื่องแล้ว",
@@ -169,6 +177,9 @@ function doPost(e) {
     if (action === "notifyLine") {
       return handleNotifyLine_(data);
     }
+    if (action === "mirrorSubmit") {
+      return handleMirrorSubmit_(data, timestamp, payloadSize);
+    }
 
     return handleLegacy_(data, timestamp, payloadSize);
 
@@ -288,6 +299,83 @@ function handleSubmit_(data, timestamp, payloadSize) {
     trackToken: trackToken,
     trackUrl: buildTrackUrl_(submitId, trackToken)
   });
+}
+
+/**
+ * Mirror ticket จาก Supabase ลง Sheets (ไม่ยิง LINE — Next เรียก notifyLine แยก)
+ */
+function handleMirrorSubmit_(data, timestamp, payloadSize) {
+  const submitId = data.submitId || "";
+  if (!submitId) {
+    return jsonResponse_({ status: "error", message: "ไม่มี submitId" });
+  }
+
+  const sheet = getSheet_();
+  ensureSheetHeaders_(sheet, true);
+  const existing = findRowBySubmitId_(sheet, submitId);
+  if (existing > 0) {
+    return jsonResponse_({ status: "success", message: "มีในชีตแล้ว", submitId: submitId, row: existing });
+  }
+
+  const isAnonymous = !!data.isAnonymous;
+  const category = data.category || "ไม่ได้เลือก";
+  const imageUrls = normalizeImageUrls_(data);
+  const imageCount = imageUrls.length || Number(data.imageCount) || 0;
+  const assignedGroup = data.assignedGroup || resolveAssignedGroup_(category);
+  const statusUpdated = formatDateTimeTh_(timestamp);
+  const statusHistory = data.statusHistory || JSON.stringify([{ status: data.status || DEFAULT_STATUS, at: statusUpdated, by: "supabase" }]);
+  const isLf = category.indexOf("ตามหาของหาย") === 0 || category.indexOf("พบของ") === 0 || !!data.lfType;
+  const isPublicShowcase =
+    data.isPublicShowcase === true ||
+    data.isPublicShowcase === "true" ||
+    (isLf && data.isPublicShowcase !== false && data.isPublicShowcase !== "false");
+
+  const newRow = appendReportRow_(sheet, {
+    timestamp: timestamp,
+    lineId: data.lineId || "",
+    name: isAnonymous ? "ไม่ประสงค์ออกนาม" : (data.name || "ไม่ระบุชื่อ"),
+    room: isAnonymous ? "" : (data.room || ""),
+    studentNo: isAnonymous ? "" : (data.studentNo || ""),
+    category: category,
+    detail: data.detail || "",
+    imageCount: imageCount,
+    imageUrl: imageUrls.join("\n"),
+    submitId: submitId,
+    debug: data.debug || "mirrored from supabase",
+    status: data.status || DEFAULT_STATUS,
+    adminNote: data.studentNote || data.adminNote || "",
+    statusUpdated: statusUpdated,
+    isAnonymous: isAnonymous ? "TRUE" : "FALSE",
+    contactOptional: data.contactOptional || "",
+    building: data.building || "",
+    zone: data.zone || "",
+    locationNote: data.locationNote || "",
+    gpsLat: data.gpsLat || "",
+    gpsLng: data.gpsLng || "",
+    lfType: data.lfType || "",
+    lfWhen: data.lfWhen || "",
+    lfReturnPoint: data.lfReturnPoint || "",
+    lfSecretDetail: data.lfSecretDetail || "",
+    isPublicShowcase: isPublicShowcase ? "TRUE" : "FALSE",
+    trackToken: data.trackToken || "",
+    upvoteCount: Number(data.upvoteCount) || 0,
+    upvotedLineIds: data.upvotedLineIds || "",
+    mergedToId: "",
+    assignedGroup: assignedGroup,
+    afterImageCount: 0,
+    afterImageUrl: "",
+    statusHistory: statusHistory,
+    imageStorage: data.imageStorage || (imageUrls.length ? "supabase" : "")
+  });
+  fixTextColumnsAfterAppend_(sheet, newRow, isAnonymous ? "" : (data.room || ""), isAnonymous ? "" : (data.studentNo || ""));
+
+  try {
+    writeLog_(timestamp, payloadSize, "mirrorSubmit", imageCount, imageCount, imageCount ? 1 : 0, "", "success", submitId);
+  } catch (logErr) {
+    Logger.log("writeLog mirrorSubmit: " + logErr.toString());
+  }
+
+  return jsonResponse_({ status: "success", message: "mirror ok", submitId: submitId, row: newRow });
 }
 
 /** LINE-only notifications from Next (Supabase is SoT). */
@@ -978,8 +1066,10 @@ function buildSubmitConfirmationMessage_(submitId, category, status, trackToken)
 
 function sendLinePushText_(to, text, submitId) {
   if (!to || to === "ไม่ระบุ ID" || String(to).indexOf("TEST") !== -1) return;
-  if (!LINE_ACCESS_TOKEN || LINE_ACCESS_TOKEN === "YOUR_LINE_CHANNEL_ACCESS_TOKEN") {
-    Logger.log("LINE_ACCESS_TOKEN not configured, skip push message");
+  const token = getLineAccessToken_();
+  if (!token) {
+    Logger.log("LINE_CHANNEL_ACCESS_TOKEN not configured in Script Properties");
+    writeDebugLog_(submitId, "LINE push: ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties");
     return;
   }
 
@@ -991,7 +1081,7 @@ function sendLinePushText_(to, text, submitId) {
   const options = {
     method: "post",
     contentType: "application/json",
-    headers: { Authorization: "Bearer " + LINE_ACCESS_TOKEN },
+    headers: { Authorization: "Bearer " + token },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   };
@@ -1008,7 +1098,7 @@ function sendLinePushText_(to, text, submitId) {
     const errText = err.toString();
     Logger.log("LINE Push error: " + errText);
     if (errText.indexOf("UrlFetchApp") >= 0 || errText.indexOf("external_request") >= 0) {
-      writeDebugLog_(submitId, "LINE push: ยังไม่ได้ขอสิทธิ์ — รัน setupPermissions ใน Editor แล้ว Deploy New version");
+      writeDebugLog_(submitId, "LINE push: ยังไม่ได้ขอสิทธิ์ — รัน authorizeLinePush ใน Editor แล้ว Deploy New version");
     } else {
       writeDebugLog_(submitId, "LINE push: " + errText);
     }
@@ -1076,9 +1166,13 @@ function notifyAssignedGroup_(assignedGroup, submitId, category, building, zone,
 /** รันครั้งเดียวจาก Apps Script Editor เพื่อขอสิทธิ์ UrlFetchApp แล้ว Deploy New version */
 function authorizeLinePush() {
   Logger.log("กำลังเรียก LINE API เพื่อขอสิทธิ์ UrlFetchApp...");
+  const token = getLineAccessToken_();
+  if (!token) {
+    throw new Error("ยังไม่มี LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties");
+  }
   const response = UrlFetchApp.fetch("https://api.line.me/v2/bot/info", {
     method: "get",
-    headers: { Authorization: "Bearer " + LINE_ACCESS_TOKEN },
+    headers: { Authorization: "Bearer " + token },
     muteHttpExceptions: true
   });
   const code = response.getResponseCode();
@@ -1086,7 +1180,7 @@ function authorizeLinePush() {
   Logger.log("HTTP " + code + " | " + body.substring(0, 200));
 
   if (code === 401) {
-    throw new Error("LINE token ไม่ถูกต้อง (HTTP 401) — ตรวจ LINE_ACCESS_TOKEN ใน Code.gs");
+    throw new Error("LINE token ไม่ถูกต้อง (HTTP 401) — ออก Channel access token ใหม่แล้วใส่ Script Properties");
   }
   if (code !== 200) {
     throw new Error("LINE API ตอบ HTTP " + code);
@@ -1131,10 +1225,14 @@ function testLinePush() {
     messages: [{ type: "text", text: "✅ UDFondue testLinePush สำเร็จ (" + API_VERSION + ")" }]
   };
 
+  const token = getLineAccessToken_();
+  if (!token) {
+    throw new Error("ยังไม่มี LINE_CHANNEL_ACCESS_TOKEN ใน Script Properties");
+  }
   const response = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", {
     method: "post",
     contentType: "application/json",
-    headers: { Authorization: "Bearer " + LINE_ACCESS_TOKEN },
+    headers: { Authorization: "Bearer " + token },
     payload: JSON.stringify(payload),
     muteHttpExceptions: true
   });
@@ -1367,14 +1465,14 @@ function ensureSheetHeaders_(sheet, forWrite) {
   }
 
   if (!cached) {
-    sheet.getRange(1, 1, 1, SHEET_HEADERS.length).setValues([SHEET_HEADERS]);
-    sheet.setFrozenRows(1);
+  sheet.getRange(1, 1, 1, SHEET_HEADERS.length).setValues([SHEET_HEADERS]);
+  sheet.setFrozenRows(1);
     cache.put(SHEET_HEADERS_CACHE_KEY, "1", 21600);
   }
 
   if (forWrite) {
     if (!cached) {
-      backfillEmptyStatus_(sheet);
+  backfillEmptyStatus_(sheet);
     }
   }
 }
@@ -1879,9 +1977,9 @@ function findRowBySubmitId_(sheet, submitId) {
   for (let c = 0; c < searchCols.length; c++) {
     const col = searchCols[c];
     const ids = getRectRange_(sheet, 2, col, lastRow, col).getValues();
-    for (let i = ids.length - 1; i >= 0; i--) {
+  for (let i = ids.length - 1; i >= 0; i--) {
       if (String(ids[i][0]) === target) {
-        return i + 2;
+      return i + 2;
       }
     }
   }
