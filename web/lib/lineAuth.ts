@@ -35,9 +35,13 @@ export async function verifyLineIdToken(idToken: string) {
   });
 
   if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    // มักเกิดเมื่อ LINE_CHANNEL_ID ไม่ตรงกับ channel ของ LIFF หรือยังไม่เปิด openid
     return {
       ok: false as const,
-      message: "เซสชัน LINE หมดอายุ กรุณาปิดหน้าต่างแล้วเปิดใหม่จากแอป LINE"
+      message:
+        "ยืนยันตัวตน LINE ไม่ผ่าน — ตรวจว่า LIFF เปิด Scope openid และ LINE_CHANNEL_ID เป็น Channel ID ของบอทนี้ จากนั้นเปิดฟอร์มใหม่จาก LINE",
+      detail: errText
     };
   }
 

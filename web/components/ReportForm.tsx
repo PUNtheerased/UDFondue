@@ -166,9 +166,20 @@ export function ReportForm() {
           window.liff.login();
           return;
         }
+        // ไม่มี ID Token = มักยังไม่เปิด Scope "openid" หรือต้อง login ใหม่หลังเปิด scope
+        if (!window.liff.getIDToken()) {
+          try {
+            window.liff.logout();
+          } catch {
+            /* ignore */
+          }
+          window.liff.login();
+          return;
+        }
         const profile = await window.liff.getProfile();
         setName(profile.displayName);
         setLineId(profile.userId);
+        setError("");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         if (/liffId/i.test(msg)) {
@@ -262,18 +273,37 @@ export function ReportForm() {
     }
 
     let token = window.liff.getIDToken();
-    if (!token) {
-      if (!window.liff.isLoggedIn()) {
-        window.liff.login();
-        throw new Error("กำลังเข้าสู่ระบบ LINE กรุณาลองส่งอีกครั้งหลังเข้าสู่ระบบ");
-      }
-      token = window.liff.getIDToken();
+    if (!token && !window.liff.isLoggedIn()) {
+      window.liff.login();
+      throw new Error("กำลังเข้าสู่ระบบ LINE — ยืนยันแล้วกดส่งอีกครั้ง");
     }
     if (!token) {
-      if (allowDev && lineId) return `dev:${lineId}`;
-      throw new Error("เซสชันหมดอายุ กรุณาปิดหน้าต่างแล้วเปิดใหม่จากแอป LINE");
+      // login ซ้ำเพื่อขอ openid / id_token ใหม่
+      try {
+        window.liff.logout();
+      } catch {
+        /* ignore */
+      }
+      window.liff.login();
+      throw new Error(
+        "ต้องการเข้าสู่ระบบใหม่ (ตรวจว่า LIFF เปิด Scope: profile และ openid แล้ว) จากนั้นกดส่งอีกครั้ง"
+      );
     }
     return token;
+  }
+
+  function removeImage(id: string) {
+    setImages((prev) => {
+      const target = prev.find((img) => img.id === id);
+      if (target?.preview?.startsWith("blob:")) {
+        try {
+          URL.revokeObjectURL(target.preview);
+        } catch {
+          /* ignore */
+        }
+      }
+      return prev.filter((img) => img.id !== id);
+    });
   }
 
   async function upvote(submitId: string) {
@@ -515,12 +545,14 @@ export function ReportForm() {
         {step === 2 && (
           <section className="bg-white rounded-2xl p-4 space-y-3">
             <h2 className="font-bold">รายละเอียดและสถานที่</h2>
-            <textarea
-              className="w-full border rounded-xl px-3 py-2 min-h-[100px]"
-              placeholder="อธิบายรายละเอียด เช่น สิ่งที่พบ ของที่หาย หรือข้อเสนอแนะ..."
-              value={detail}
-              onChange={(e) => setDetail(e.target.value)}
-            />
+            {category !== "ตามหาของหาย" && (
+              <textarea
+                className="w-full border rounded-xl px-3 py-2 min-h-[100px]"
+                placeholder="อธิบายรายละเอียด เช่น สิ่งที่พบ หรือข้อเสนอแนะ..."
+                value={detail}
+                onChange={(e) => setDetail(e.target.value)}
+              />
+            )}
             <select
               className="w-full border rounded-xl px-3 py-2"
               value={building}
@@ -595,6 +627,14 @@ export function ReportForm() {
                   <option value="แจ้งทำของหาย">แจ้งทำของหาย</option>
                   <option value="แจ้งพบของหาย">แจ้งพบของหาย</option>
                 </select>
+                {(lfType === "แจ้งทำของหาย" || lfType === "แจ้งพบของหาย") && (
+                  <textarea
+                    className="w-full border rounded-xl px-3 py-2 min-h-[88px]"
+                    placeholder="อธิบายลักษณะสิ่งของ เช่น รูปร่าง/สี"
+                    value={detail}
+                    onChange={(e) => setDetail(e.target.value)}
+                  />
+                )}
                 <input
                   type="datetime-local"
                   className="w-full border rounded-xl px-3 py-2"
@@ -657,9 +697,7 @@ export function ReportForm() {
                 onChange={(e) => setIsAnonymous(e.target.checked)}
                 className="mt-1"
               />
-              <span>
-                แจ้งแบบไม่ระบุชื่อ — จะแสดงเป็น “ไม่ประสงค์ออกนาม” แต่ระบบยังส่งแจ้งเตือนสถานะใน LINE ได้
-              </span>
+              <span>แจ้งแบบไม่ระบุชื่อ</span>
             </label>
             {!isAnonymous && (
               <>
@@ -704,6 +742,14 @@ export function ReportForm() {
                   <div key={img.id} className="relative rounded-xl overflow-hidden border bg-gray-100">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={img.preview} alt="" className="w-full h-24 object-cover" />
+                    <button
+                      type="button"
+                      aria-label="ลบรูป"
+                      className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/70 text-white text-sm font-bold leading-none"
+                      onClick={() => removeImage(img.id)}
+                    >
+                      ×
+                    </button>
                     <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[10px] px-1 py-0.5">
                       {img.status}
                     </div>
