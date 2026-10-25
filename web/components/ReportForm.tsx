@@ -238,16 +238,25 @@ export function ReportForm() {
   }
 
   async function refreshIdToken() {
+    const allowDev = process.env.NODE_ENV !== "production";
+
     if (!window.liff) {
-      return lineId ? `dev:${lineId}` : "dev:U-TEST-USER-ID";
+      if (allowDev) return lineId ? `dev:${lineId}` : "dev:U-TEST-USER-ID";
+      throw new Error("กรุณาเปิดฟอร์มนี้จากแอป LINE เท่านั้น");
     }
+
     let token = window.liff.getIDToken();
     if (!token) {
-      if (!window.liff.isLoggedIn()) window.liff.login();
+      if (!window.liff.isLoggedIn()) {
+        window.liff.login();
+        throw new Error("กำลังเข้าสู่ระบบ LINE กรุณาลองส่งอีกครั้งหลังเข้าสู่ระบบ");
+      }
       token = window.liff.getIDToken();
     }
-    if (!token && lineId) return `dev:${lineId}`;
-    if (!token) throw new Error("ไม่สามารถขอ LIFF ID Token ได้ กรุณาเปิดใหม่จาก LINE");
+    if (!token) {
+      if (allowDev && lineId) return `dev:${lineId}`;
+      throw new Error("เซสชันหมดอายุ กรุณาปิดหน้าต่างแล้วเปิดใหม่จากแอป LINE");
+    }
     return token;
   }
 
@@ -329,7 +338,7 @@ export function ReportForm() {
       return;
     }
     if (!turnstileToken) {
-      setError("กรุณายืนยัน Turnstile");
+      setError("กรุณายืนยันว่าคุณไม่ใช่บอท แล้วลองอีกครั้ง");
       return;
     }
 
@@ -374,10 +383,10 @@ export function ReportForm() {
       <div className="min-h-dvh flex items-center justify-center px-4 pb-safe">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
           <div className="text-4xl text-blue-800 mb-3">✓</div>
-          <h2 className="text-xl font-bold text-blue-900">ขอบคุณที่แจ้งปัญหา</h2>
-          <p className="text-sm text-gray-500 mt-2">เราได้รับข้อมูลของคุณแล้ว</p>
+          <h2 className="text-xl font-bold text-blue-900">รับเรื่องเรียบร้อยแล้ว</h2>
+          <p className="text-sm text-gray-500 mt-2">ขอบคุณที่แจ้งเรื่อง เจ้าหน้าที่จะดำเนินการตามลำดับ</p>
           <div className="mt-4 bg-blue-50 rounded-xl p-4 text-left">
-            <p className="text-xs text-blue-800 font-semibold mb-1">เลขที่แจ้ง</p>
+            <p className="text-xs text-blue-800 font-semibold mb-1">เลขที่ติดตาม</p>
             <p className="font-mono text-sm break-all">{successId}</p>
             <button
               type="button"
@@ -433,14 +442,14 @@ export function ReportForm() {
 
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
         <h1 className="text-2xl font-bold">UDFondue</h1>
-        <p className="text-sm text-blue-100 mt-1">ระบบแจ้งเรื่องนักเรียน</p>
+        <p className="text-sm text-blue-100 mt-1">ระบบแจ้งเรื่องสำหรับนักเรียน</p>
         <div className="mt-4 flex justify-center gap-2 text-xs">
           {[1, 2, 3].map((n) => (
             <span
               key={n}
               className={`px-3 py-1 rounded-full ${step === n ? "bg-white text-blue-900" : "bg-white/20"}`}
             >
-              Step {n}/3
+              ขั้นตอนที่ {n}/3
             </span>
           ))}
         </div>
@@ -492,7 +501,7 @@ export function ReportForm() {
             <h2 className="font-bold">รายละเอียดและสถานที่</h2>
             <textarea
               className="w-full border rounded-xl px-3 py-2 min-h-[100px]"
-              placeholder="อธิบายปัญหา / ของที่หาย..."
+              placeholder="อธิบายรายละเอียด เช่น สิ่งที่พบ ของที่หาย หรือข้อเสนอแนะ..."
               value={detail}
               onChange={(e) => setDetail(e.target.value)}
             />
@@ -633,7 +642,7 @@ export function ReportForm() {
                 className="mt-1"
               />
               <span>
-                แจ้งแบบไม่ระบุตัวตน — ชื่อ/ห้อง/เลขที่จะไม่แสดงสาธารณะ แต่ยังรับแจ้งเตือนใน LINE ได้
+                แจ้งแบบไม่ระบุชื่อ — จะแสดงเป็น “ไม่ประสงค์ออกนาม” แต่ระบบยังส่งแจ้งเตือนสถานะใน LINE ได้
               </span>
             </label>
             {!isAnonymous && (

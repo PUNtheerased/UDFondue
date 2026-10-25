@@ -7,7 +7,6 @@ declare global {
     turnstile?: {
       render: (el: HTMLElement, opts: Record<string, unknown>) => string;
       reset: (id?: string) => void;
-      getResponse: (id?: string) => string;
     };
   }
 }
@@ -20,10 +19,15 @@ export function TurnstileWidget({ onToken }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
+  const allowDevBypass = process.env.NODE_ENV !== "production" && !siteKey;
 
   useEffect(() => {
-    if (!siteKey) {
+    if (allowDevBypass) {
       onToken("dev-bypass");
+      return;
+    }
+    if (!siteKey) {
+      onToken("");
       return;
     }
 
@@ -44,12 +48,20 @@ export function TurnstileWidget({ onToken }: Props) {
       cancelled = true;
       clearInterval(t);
     };
-  }, [siteKey, onToken]);
+  }, [siteKey, allowDevBypass, onToken]);
+
+  if (allowDevBypass) {
+    return (
+      <p className="text-xs text-amber-800 bg-amber-50 rounded-lg px-3 py-2">
+        โหมดพัฒนา: ข้ามการยืนยันบอท (ใช้เฉพาะบนเครื่องพัฒนา)
+      </p>
+    );
+  }
 
   if (!siteKey) {
     return (
-      <p className="text-xs text-amber-700 bg-amber-50 rounded-lg px-3 py-2">
-        Turnstile ยังไม่ตั้งค่า — ใช้โหมดพัฒนา (dev-bypass)
+      <p className="text-xs text-red-700 bg-red-50 rounded-lg px-3 py-2">
+        ระบบยืนยันตัวตนยังไม่พร้อม — กรุณาติดต่อครูหรือผู้ดูแลระบบ
       </p>
     );
   }

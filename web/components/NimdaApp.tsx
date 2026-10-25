@@ -236,11 +236,12 @@ export function NimdaApp() {
     return (
       <div className="min-h-dvh flex items-center justify-center px-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8 space-y-4">
-          <h1 className="text-xl font-bold text-center">UDFondue Admin</h1>
+          <h1 className="text-xl font-bold text-center">UDFondue — สำหรับเจ้าหน้าที่</h1>
+          <p className="text-xs text-gray-500 text-center">หน้านี้สำหรับครู/เจ้าหน้าที่เท่านั้น</p>
           <input
             type="password"
             className="w-full border rounded-xl px-3 py-3"
-            placeholder="รหัสผ่าน Admin"
+            placeholder="รหัสผ่านเจ้าหน้าที่"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && login()}

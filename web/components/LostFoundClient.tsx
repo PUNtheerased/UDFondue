@@ -38,7 +38,7 @@ export function LostFoundClient({
     <div className="min-h-dvh pb-safe">
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-6">
         <h1 className="text-xl font-bold">กระดานของหาย</h1>
-        <p className="text-sm text-blue-100">รายการสาธารณะ — ข้อมูลลับถูกซ่อนไว้</p>
+        <p className="text-sm text-blue-100">รายการสาธารณะของโรงเรียน — ข้อมูลยืนยันเจ้าของไม่แสดงที่นี่</p>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-5 space-y-4">
         <div className="flex gap-2">

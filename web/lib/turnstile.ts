@@ -1,21 +1,24 @@
+import { isProdRuntime } from "./runtime";
+
 export async function verifyTurnstile(token: string, ip?: string | null) {
   const secret = process.env.TURNSTILE_SECRET_KEY;
+
   if (!secret) {
-    // Allow local/dev without Turnstile if secret missing but token is "dev-bypass"
-    if (process.env.NODE_ENV !== "production" && token === "dev-bypass") {
+    if (!isProdRuntime() && token === "dev-bypass") {
       return { ok: true as const };
     }
-    if (!secret) {
-      return { ok: false as const, message: "Turnstile is not configured" };
-    }
+    return {
+      ok: false as const,
+      message: "ระบบยืนยันตัวตนยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล"
+    };
   }
 
-  if (!token) {
-    return { ok: false as const, message: "Missing Turnstile token" };
+  if (!token || token === "dev-bypass") {
+    return { ok: false as const, message: "กรุณายืนยันว่าคุณไม่ใช่บอท แล้วลองใหม่อีกครั้ง" };
   }
 
   const body = new URLSearchParams();
-  body.set("secret", secret!);
+  body.set("secret", secret);
   body.set("response", token);
   if (ip) body.set("remoteip", ip);
 
@@ -27,7 +30,7 @@ export async function verifyTurnstile(token: string, ip?: string | null) {
   if (!data.success) {
     return {
       ok: false as const,
-      message: "Turnstile verification failed",
+      message: "การยืนยันไม่สำเร็จ กรุณาลองใหม่อีกครั้ง",
       codes: data["error-codes"] || []
     };
   }

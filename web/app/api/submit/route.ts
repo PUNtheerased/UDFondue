@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const rl = rateLimit(`submit:${ip}:${lineAuth.sub}`, 5, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json(
-        { status: "error", message: "ส่งบ่อยเกินไป กรุณารอสักครู่", code: "RATE_LIMIT" },
+        { status: "error", message: "ส่งเรื่องบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },
         { status: 429 }
       );
     }
@@ -41,7 +41,11 @@ export async function POST(req: NextRequest) {
     const category = String(body.category || "");
     if (containsProfanity(detail) || containsProfanity(category) || containsProfanity(String(body.otherCategory || ""))) {
       return NextResponse.json(
-        { status: "error", message: "พบข้อความไม่เหมาะสม กรุณาแก้ไขก่อนส่ง", code: "PROFANITY" },
+        {
+          status: "error",
+          message: "พบข้อความไม่เหมาะสม กรุณาแก้ไขถ้อยคำให้สุภาพก่อนส่ง",
+          code: "PROFANITY"
+        },
         { status: 400 }
       );
     }

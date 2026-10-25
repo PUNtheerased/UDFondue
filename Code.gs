@@ -835,21 +835,23 @@ function buildSubmitConfirmationMessage_(submitId, category, status, trackToken)
   const resolvedStatus = status || DEFAULT_STATUS;
   let statusLine = resolvedStatus;
   if (resolvedStatus === DEFAULT_STATUS) {
-    statusLine = "🟡 " + resolvedStatus + " (รอเจ้าหน้าที่ตรวจสอบ)";
+    statusLine = resolvedStatus + " (รอเจ้าหน้าที่ตรวจสอบ)";
   }
 
   return [
-    "🙏 ขอบคุณสำหรับการแจ้งเรื่องครับ/ค่ะ!",
-    "ทางเราได้รับข้อมูลของท่านเรียบร้อยแล้ว",
-    "📌 สรุปรายละเอียดการแจ้งเรื่อง",
-    "• รหัสติดตาม: " + (submitId || "—"),
-    "• หมวดหมู่: " + (category || "ไม่ได้เลือก"),
-    "• สถานะปัจจุบัน: " + statusLine,
+    "รับเรื่องเรียบร้อยแล้ว",
+    "ระบบได้รับข้อมูลของท่านแล้ว เจ้าหน้าที่จะดำเนินการตามลำดับ",
     "",
-    "🔍 ติดตามสถานะได้ที่:",
-    "👉 " + buildTrackUrl_(submitId, trackToken),
-    "📝 แจ้งปัญหาเพิ่มเติมได้ที่:",
-    "👉 " + LIFF_REPORT_URL
+    "สรุปการแจ้งเรื่อง",
+    "• เลขที่ติดตาม: " + (submitId || "—"),
+    "• ประเภท: " + (category || "ไม่ได้เลือก"),
+    "• สถานะ: " + statusLine,
+    "",
+    "ติดตามสถานะ:",
+    buildTrackUrl_(submitId, trackToken),
+    "",
+    "แจ้งเรื่องเพิ่มเติม:",
+    LIFF_REPORT_URL
   ].join("\n");
 }
 
@@ -904,16 +906,16 @@ function sendLineThankYou_(userId, submitId, category, status, trackToken) {
 
 function sendLineStatusUpdate_(userId, submitId, status, adminNote, trackToken) {
   const lines = [
-    "📢 อัปเดตสถานะเรื่องของคุณ",
-    "• รหัสติดตาม: " + (submitId || "—"),
-    "• สถานะใหม่: " + (status || "—")
+    "อัปเดตสถานะเรื่องของท่าน",
+    "• เลขที่ติดตาม: " + (submitId || "—"),
+    "• สถานะปัจจุบัน: " + (status || "—")
   ];
   if (adminNote) {
-    lines.push("• หมายเหตุ: " + adminNote);
+    lines.push("• หมายเหตุจากเจ้าหน้าที่: " + adminNote);
   }
   lines.push("");
-  lines.push("🔍 ดูรายละเอียด/รูป Before-After:");
-  lines.push("👉 " + buildTrackUrl_(submitId, trackToken));
+  lines.push("ดูรายละเอียดและรูปประกอบ:");
+  lines.push(buildTrackUrl_(submitId, trackToken));
   sendLinePushText_(userId, lines.join("\n"), submitId);
 }
 
@@ -940,12 +942,12 @@ function notifyAssignedGroup_(assignedGroup, submitId, category, building, zone,
   const groupId = getGroupIdForKey_(assignedGroup);
   if (!groupId) return;
   const text = [
-    "🆕 เรื่องใหม่เข้าคิว (" + (assignedGroup || "GENERAL") + ")",
-    "• รหัส: " + submitId,
+    "มีเรื่องใหม่เข้าคิว (" + (assignedGroup || "GENERAL") + ")",
+    "• เลขที่: " + submitId,
     "• ประเภท: " + category,
     "• สถานที่: " + [building, zone].filter(Boolean).join(" / "),
     "• รายละเอียด: " + String(detail || "").substring(0, 120),
-    "• Admin: " + (PUBLIC_TRACK_BASE.replace("/track", "/nimda"))
+    "• หน้าเจ้าหน้าที่: " + (PUBLIC_TRACK_BASE.replace("/track", "/nimda"))
   ].join("\n");
   sendLinePushText_(groupId, text, submitId);
 }
