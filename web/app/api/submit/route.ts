@@ -4,6 +4,9 @@ import { verifyTurnstile } from "@/lib/turnstile";
 import { verifyLineIdToken } from "@/lib/lineAuth";
 import { rateLimit } from "@/lib/rateLimit";
 import { containsProfanity } from "@/lib/profanity";
+import { isTicketsDbReady } from "@/lib/supabaseAdmin";
+import { createTicket } from "@/lib/ticketsDb";
+import { notifyLine } from "@/lib/notifyLine";
 
 export const runtime = "nodejs";
 
@@ -29,23 +32,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Layer 1a: per IP · Layer 1b: per LINE user (GAS also limits by lineId)
     const rlIp = rateLimit(`submit:ip:${ip}`, 12, 10 * 60 * 1000);
     const rlLine = rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
     if (!rlIp.ok || !rlLine.ok) {
       return NextResponse.json(
-        { status: "error", message: "ส่งเรื่องบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },
+        { status: "error", message: "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ", code: "RATE_LIMIT" },
         { status: 429 }
       );
     }
 
+    let category = String(body.category || "");
     const detail = String(body.detail || "");
-    const category = String(body.category || "");
+    if (category === "other" || category === "อื่นๆ") {
+      category = "อื่นๆ: " + (body.otherCategory || "ไม่ระบุหัวข้อ");
+    }
     if (containsProfanity(detail) || containsProfanity(category) || containsProfanity(String(body.otherCategory || ""))) {
       return NextResponse.json(
         {
           status: "error",
-          message: "พบข้อความไม่เหมาะสม กรุณาแก้ไขถ้อยคำให้สุภาพก่อนส่ง",
+          message: "พบข้อความไม่เหมาะสม ลองแก้ถ้อยคำให้อ่านง่ายขึ้นก่อนส่งนะ",
           code: "PROFANITY"
         },
         { status: 400 }
@@ -53,14 +58,72 @@ export async function POST(req: NextRequest) {
     }
 
     const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.map(String) : [];
+    const submitId = String(body.submitId || "").trim();
+    if (!submitId) {
+      return NextResponse.json({ status: "error", message: "ไม่มีเลขที่แจ้ง" }, { status: 400 });
+    }
 
+    const name = body.isAnonymous ? "ไม่ประสงค์ออกนาม" : body.name || lineAuth.name || "ไม่ระบุชื่อ";
+    const room = body.isAnonymous ? "" : body.room || "";
+    const studentNo = body.isAnonymous ? "" : body.studentNo || "";
+
+    if (isTicketsDbReady()) {
+      const { trackToken, assignedGroup } = await createTicket({
+        submitId,
+        lineId: lineAuth.sub,
+        name,
+        room,
+        studentNo,
+        category,
+        detail,
+        imageUrls,
+        isAnonymous: !!body.isAnonymous,
+        contactOptional: body.contactOptional || "",
+        building: body.building || "",
+        zone: body.zone || "",
+        locationNote: body.locationNote || "",
+        gpsLat: body.gpsLat || "",
+        gpsLng: body.gpsLng || "",
+        lfType: body.lfType || "",
+        lfWhen: body.lfWhen || "",
+        lfReturnPoint: body.lfReturnPoint || "",
+        lfSecretDetail: body.lfSecretDetail || "",
+        isPublicShowcase: body.isPublicShowcase !== false,
+        urgency: body.urgency || "ปกติ"
+      });
+
+      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+      await notifyLine({
+        kind: "submit",
+        lineId: lineAuth.sub,
+        submitId,
+        category,
+        status: "รับเรื่องแล้ว",
+        trackToken,
+        assignedGroup,
+        building: body.building || "",
+        zone: body.zone || "",
+        detail,
+        trackUrl: `${siteUrl}/track/${encodeURIComponent(submitId)}?t=${trackToken}`
+      });
+
+      return NextResponse.json({
+        status: "success",
+        message: "บันทึกเรียบร้อย",
+        submitId,
+        trackToken,
+        trackUrl: `/track/${encodeURIComponent(submitId)}?t=${trackToken}`
+      });
+    }
+
+    // Fallback: Sheets via GAS
     const result = await callGas({
       action: "submit",
-      submitId: body.submitId,
+      submitId,
       lineId: lineAuth.sub,
-      name: body.isAnonymous ? "ไม่ประสงค์ออกนาม" : body.name || lineAuth.name || "ไม่ระบุชื่อ",
-      room: body.isAnonymous ? "" : body.room || "",
-      studentNo: body.isAnonymous ? "" : body.studentNo || "",
+      name,
+      room,
+      studentNo,
       category,
       otherCategory: body.otherCategory || "",
       detail,

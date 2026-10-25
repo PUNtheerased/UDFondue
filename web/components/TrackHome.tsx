@@ -125,7 +125,7 @@ export function TrackHome() {
     }
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
     if (!window.liff || !liffId) {
-      setMineError("กรุณาเปิดหน้านี้จากแอป LINE เพื่อดูเรื่องของท่าน");
+      setMineError("เปิดจากแอป LINE เพื่อดูเรื่องของตัวเองนะ");
       return;
     }
     window.liff.login();
@@ -135,7 +135,7 @@ export function TrackHome() {
     <div className="min-h-dvh pb-safe">
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
         <h1 className="text-2xl font-bold">ติดตามสถานะ</h1>
-        <p className="text-sm text-blue-100 mt-1">ค้นหาด้วยเลขที่แจ้ง หรือดูเรื่องของท่าน</p>
+        <p className="text-sm text-blue-100 mt-1">ค้นด้วยเลขที่แจ้ง หรือดูเรื่องของตัวเอง</p>
       </header>
 
       <main className="max-w-xl mx-auto px-4 py-5 space-y-4">
@@ -163,8 +163,7 @@ export function TrackHome() {
         {tab === "search" && (
           <section className="bg-white rounded-2xl p-5 space-y-3">
             <p className="text-sm text-gray-600">
-              กรอกเลขที่ติดตาม เช่น <span className="font-mono">UDF-XXXXXXXX</span> — ถ้าพิมพ์เฉพาะรหัส
-              ระบบจะเติม <span className="font-mono">UDF-</span> ให้
+              กรอกเลขที่ติดตาม เช่น <span className="font-mono">UDF-XXXXXXXX</span>
             </p>
             <form onSubmit={onSearch} className="space-y-3">
               <input

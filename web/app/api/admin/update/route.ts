@@ -1,22 +1,118 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/adminSession";
+import { assertDevMode, getAdminSession, getNimdaMode } from "@/lib/adminSession";
 import { callGas } from "@/lib/gas";
+import { notifyLine } from "@/lib/notifyLine";
+import { isTicketsDbReady } from "@/lib/supabaseAdmin";
+import {
+  cancelHandoff,
+  hideTicket,
+  mergeTickets,
+  unlockHandoff,
+  updateTicketStatus
+} from "@/lib/ticketsDb";
 
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
   if (!session) {
-    return NextResponse.json({ status: "error", message: "กรุณาเข้าสู่ระบบ" }, { status: 401 });
+    return NextResponse.json({ status: "error", message: "เข้าสู่ระบบก่อนนะ" }, { status: 401 });
   }
 
   try {
     const body = await req.json();
+    const action = body.action || "adminUpdate";
+    const mode = getNimdaMode();
+    const byRole = mode === "dev" ? "dev" : "teacher";
+
+    if (isTicketsDbReady()) {
+      if (action === "adminMergeTickets") {
+        try {
+          assertDevMode();
+        } catch {
+          return NextResponse.json({ status: "error", message: "รวมเคสใช้ได้เฉพาะโหมด Dev" }, { status: 403 });
+        }
+        const into = String(body.mergeIntoId || body.submitId || "");
+        const fromIds = String(body.mergeFromIds || body.mergeIds || "")
+          .split(",")
+          .map((s: string) => s.trim())
+          .filter(Boolean);
+        await mergeTickets(into, fromIds, byRole);
+        return NextResponse.json({ status: "success", message: "รวมเคสแล้ว" });
+      }
+
+      if (action === "adminModerationHide") {
+        await hideTicket(String(body.submitId || ""), byRole);
+        return NextResponse.json({ status: "success", message: "ซ่อนรายการแล้ว" });
+      }
+
+      if (action === "assignJanitor") {
+        const submitId = String(body.submitId || "");
+        const row = await updateTicketStatus({
+          submitId,
+          status: "กำลังดำเนินการ",
+          assignedTo: "janitor",
+          studentNote: body.studentNote || "ส่งต่อภารโรงแล้ว กำลังดำเนินการ",
+          byRole
+        });
+        await notifyLine({
+          kind: "janitor",
+          assignedGroup: "FACILITY",
+          submitId,
+          category: row.category,
+          building: row.building,
+          zone: row.zone,
+          detail: row.detail,
+          imageUrl: row.image_url
+        });
+        return NextResponse.json({ status: "success", message: "ส่งต่อภารโรงแล้ว" });
+      }
+
+      if (action === "unlockHandoff") {
+        try {
+          assertDevMode();
+        } catch {
+          return NextResponse.json({ status: "error", message: "ปลดล็อกรหัสใช้ได้เฉพาะโหมด Dev" }, { status: 403 });
+        }
+        await unlockHandoff(String(body.submitId || ""));
+        return NextResponse.json({ status: "success", message: "ปลดล็อกรหัสแล้ว" });
+      }
+
+      if (action === "forceCancelHandoff") {
+        await cancelHandoff(String(body.submitId || ""), "", true);
+        return NextResponse.json({ status: "success", message: "ยกเลิกเคลมแล้ว" });
+      }
+
+      // adminUpdate
+      const submitId = String(body.submitId || "");
+      const note = body.studentNote ?? body.adminNote ?? "";
+      const row = await updateTicketStatus({
+        submitId,
+        status: body.status,
+        studentNote: note,
+        afterImageUrls: body.afterImageUrls || [],
+        byRole
+      });
+
+      if (body.status && row.line_id) {
+        await notifyLine({
+          kind: "status",
+          lineId: row.line_id,
+          submitId,
+          status: body.status,
+          studentNote: note,
+          trackToken: row.track_token
+        });
+      }
+
+      return NextResponse.json({ status: "success", message: "บันทึกแล้ว" });
+    }
+
     const gasToken = session.startsWith("gas:") ? session.slice(4) : "session";
     const result = await callGas({
       action: body.action || "adminUpdate",
       adminToken: gasToken,
       submitId: body.submitId,
       status: body.status,
-      adminNote: body.adminNote,
+      adminNote: body.studentNote || body.adminNote,
       afterImageUrls: body.afterImageUrls || [],
       mergeIntoId: body.mergeIntoId,
       mergeFromIds: body.mergeFromIds || [],

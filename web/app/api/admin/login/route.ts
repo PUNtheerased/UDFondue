@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { adminCookieName, createAdminSessionToken } from "@/lib/adminSession";
+import { adminCookieName, createAdminSessionToken, nimdaModeCookieName } from "@/lib/adminSession";
 import { getAdminLineIds } from "@/lib/env";
 import { verifyLineIdToken } from "@/lib/lineAuth";
 import { callGas } from "@/lib/gas";
@@ -55,8 +55,16 @@ export async function POST(req: NextRequest) {
     }
 
     const token = createAdminSessionToken(`gas:${gas.adminToken}`);
-    const res = NextResponse.json({ status: "success" });
+    const res = NextResponse.json({ status: "success", mode: "admin" });
     res.cookies.set(adminCookieName(), token, {
+      httpOnly: true,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 8 * 60 * 60
+    });
+    // ค่าเริ่มต้นหลังล็อกอิน = Admin
+    res.cookies.set(nimdaModeCookieName(), "admin", {
       httpOnly: true,
       sameSite: "strict",
       secure: process.env.NODE_ENV === "production",

@@ -19,18 +19,22 @@
 | `NEXT_PUBLIC_LIFF_ID_TRACK` | ใช่ | LINE Developers → LIFF |
 | `LINE_CHANNEL_ID` | ใช่ | LINE Developers → Channel ID (ตัวเลข) |
 | `ADMIN_PIN` | ใช่ | รหัสหน้า `/nimda` (ตั้งใหม่เอง) |
+| `DEV_PIN` | แนะนำ | รหัสสลับโหมด Dev ใน Nimda (แก้ข้อมูลดิบ / ข้อความเว็บ) |
 | `ADMIN_SESSION_SECRET` | ใช่ | สุ่มยาว เช่น `openssl rand -hex 32` |
 | `ADMIN_LINE_IDS` | แนะนำ | LINE userId ของครู คั่นด้วย `,` |
+| `SUPABASE_SERVICE_ROLE` | ใช่ (Realtime/SoT) | service_role — ห้ามใส่ฝั่ง client |
 | `NEXT_PUBLIC_SITE_URL` | ใช่ | เช่น `https://ud-fondue.vercel.app` |
 
 ตัวอย่างชื่อตัวแปรดูได้ที่ `web/.env.example`
 
 หลังใส่ครบ → **Deployments → Redeploy**
 
-## 2) Supabase Storage
+## 2) Supabase Storage + Tickets
 
 1. สร้าง bucket ชื่อ `udfondue-images` (public)
 2. รัน SQL ใน `web/supabase/storage-rls.sql`
+3. รัน SQL ใน `web/supabase/tickets-schema.sql` (ตาราง tickets / handoff / Realtime)
+4. ใส่ `SUPABASE_SERVICE_ROLE` บน Vercel แล้ว Redeploy — เมื่อมีค่านี้ ระบบใช้ Supabase เป็นแหล่งจริง (GAS เหลือส่ง LINE)
 
 ## 3) Google Apps Script
 

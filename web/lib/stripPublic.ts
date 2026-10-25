@@ -24,6 +24,7 @@ export function stripPublicReport<T extends Record<string, unknown>>(report: T):
     delete out.name;
     delete out.room;
     delete out.locationNote;
+    // เก็บ studentNote ไว้ให้อ่านข้อความจากครูได้แม้โหมดสรุป
   } else if (out.isAnonymous) {
     out.name = "ไม่ประสงค์ออกนาม";
     out.room = "";

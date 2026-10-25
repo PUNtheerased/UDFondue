@@ -1,7 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { getClientIdToken } from "@/lib/clientLine";
+import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
 
 type Report = {
   submitId: string;
@@ -14,6 +16,7 @@ type Report = {
   lfReturnPoint?: string;
   imageUrl?: string;
   date?: string;
+  status?: string;
 };
 
 export function LostFoundClient({
@@ -23,13 +26,32 @@ export function LostFoundClient({
   initialReports: Report[];
   buildings: string[];
 }) {
+  const [reports, setReports] = useState<Report[]>(initialReports || []);
   const [tab, setTab] = useState<"แจ้งทำของหาย" | "แจ้งพบของหาย">("แจ้งทำของหาย");
   const [building, setBuilding] = useState("");
   const [keyword, setKeyword] = useState("");
+  const [busyId, setBusyId] = useState("");
+  const [toast, setToast] = useState("");
+
+  const refresh = useCallback(async () => {
+    try {
+      const res = await fetch("/api/lost-found");
+      const data = await res.json();
+      if (data.status === "success") setReports(data.reports || []);
+    } catch {
+      /* keep current */
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  useTicketsRealtime(refresh, true);
 
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase();
-    return (initialReports || []).filter((r) => {
+    return (reports || []).filter((r) => {
       if (r.lfType && r.lfType !== tab) return false;
       if (building && r.building !== building) return false;
       if (!q) return true;
@@ -38,15 +60,42 @@ export function LostFoundClient({
         .toLowerCase();
       return hay.includes(q);
     });
-  }, [initialReports, tab, building, keyword]);
+  }, [reports, tab, building, keyword]);
+
+  async function claim(submitId: string) {
+    setBusyId(submitId);
+    setToast("");
+    try {
+      const idToken = await getClientIdToken();
+      if (!idToken) throw new Error("เปิดจากแอป LINE ก่อนนะ");
+      const res = await fetch("/api/lf/claim", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submitId, idToken })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "เคลมไม่สำเร็จ");
+      setToast("เคลมแล้ว — นัดรับกับผู้พบ แล้วให้เขาสร้างรหัสบนเครื่องเขา");
+      refresh();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "เคลมไม่สำเร็จ");
+    } finally {
+      setBusyId("");
+    }
+  }
 
   return (
     <div className="min-h-dvh pb-safe">
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-6">
         <h1 className="text-xl font-bold">กระดานของหาย</h1>
-        <p className="text-sm text-blue-100">รายการสาธารณะของโรงเรียน — ข้อมูลยืนยันเจ้าของไม่แสดงที่นี่</p>
+        <p className="text-sm text-blue-100">Lost & Found</p>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {toast && (
+          <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-900">
+            {toast}
+          </div>
+        )}
         <div className="flex gap-2">
           {(["แจ้งทำของหาย", "แจ้งพบของหาย"] as const).map((t) => (
             <button
@@ -86,9 +135,9 @@ export function LostFoundClient({
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-800 text-xl">
                 ⌕
               </div>
-              <p className="font-semibold text-slate-800">ยังไม่มีรายการในขณะนี้</p>
+              <p className="font-semibold text-slate-800">ยังไม่มีรายการตอนนี้</p>
               <p className="mt-1 text-sm text-slate-500 leading-relaxed">
-                ยังไม่มีรายการแจ้งของหายที่ตรงเงื่อนไข — แจ้งทำของหายหรือพบของได้ที่ฟอร์ม
+                ลองเปลี่ยนตัวกรอง หรือไปแจ้งของหาย / พบของที่ฟอร์ม
               </p>
               <Link
                 href="/?category=%E0%B8%95%E0%B8%B2%E0%B8%A1%E0%B8%AB%E0%B8%B2%E0%B8%82%E0%B8%AD%E0%B8%87%E0%B8%AB%E0%B8%B2%E0%B8%A2"
@@ -115,15 +164,32 @@ export function LostFoundClient({
                 {r.lfReturnPoint && (
                   <p className="text-xs text-blue-800">จุดรับคืน: {r.lfReturnPoint}</p>
                 )}
-                <div className="flex gap-2 pt-1">
+                <div className="flex flex-wrap items-center gap-2 pt-1">
                   <Link
                     href={`/track/${r.submitId}`}
                     className="text-sm text-blue-800 font-semibold"
                   >
                     ดูสถานะ
                   </Link>
-                  <span className="text-sm text-gray-400">|</span>
-                  <span className="text-sm text-gray-600">ติดต่อรับคืนที่จุดรับคืนเพื่อยืนยันตัวตน</span>
+                  {tab === "แจ้งพบของหาย" && (
+                    <>
+                      <span className="text-sm text-gray-400">|</span>
+                      <button
+                        type="button"
+                        disabled={busyId === r.submitId}
+                        className="text-sm font-semibold text-blue-800 disabled:opacity-50"
+                        onClick={() => claim(r.submitId)}
+                      >
+                        นี่ของฉัน
+                      </button>
+                    </>
+                  )}
+                  {tab === "แจ้งทำของหาย" && (
+                    <>
+                      <span className="text-sm text-gray-400">|</span>
+                      <span className="text-sm text-gray-600">นัดรับ หรือเคลมจากรายการพบของ</span>
+                    </>
+                  )}
                 </div>
               </article>
             );

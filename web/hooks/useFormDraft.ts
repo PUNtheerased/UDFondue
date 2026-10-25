@@ -21,6 +21,7 @@ export type FormDraft = {
   lfReturnPoint: string;
   lfSecretDetail: string;
   isPublicShowcase: boolean;
+  urgency?: string;
   gpsLat: string;
   gpsLng: string;
 };

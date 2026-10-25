@@ -76,6 +76,7 @@ export function ReportForm() {
   const [lfReturnPoint, setLfReturnPoint] = useState("");
   const [lfSecretDetail, setLfSecretDetail] = useState("");
   const [isPublicShowcase, setIsPublicShowcase] = useState(true);
+  const [urgency, setUrgency] = useState("ปกติ");
   const [gpsLat, setGpsLat] = useState("");
   const [gpsLng, setGpsLng] = useState("");
   const [name, setName] = useState("");
@@ -111,6 +112,7 @@ export function ReportForm() {
     lfReturnPoint,
     lfSecretDetail,
     isPublicShowcase,
+    urgency,
     gpsLat,
     gpsLng
   };
@@ -310,7 +312,7 @@ export function ReportForm() {
     }
 
     if (!window.liff) {
-      throw new Error("กรุณาเปิดฟอร์มนี้จากแอป LINE เท่านั้น");
+      throw new Error("เปิดหน้านี้จากแอป LINE อีกครั้งนะ");
     }
 
     let token = window.liff.getIDToken();
@@ -388,49 +390,49 @@ export function ReportForm() {
   async function submitForm() {
     setError("");
     if (!category) {
-      setError("กรุณาเลือกประเภทเรื่อง");
+      setError("เลือกประเภทเรื่องก่อนนะ");
       setStep(1);
       return;
     }
     if (category === "อื่นๆ" && !otherCategory.trim()) {
-      setError("กรุณาระบุหัวข้ออื่นๆ");
+      setError("พิมพ์หัวข้ออื่นๆ ก่อนต่อ");
       return;
     }
     if (!detail.trim()) {
-      setError("กรุณากรอกรายละเอียด");
+      setError("เล่ารายละเอียดสักหน่อย");
       setStep(2);
       return;
     }
     if (!building || !zone) {
-      setError("กรุณาเลือกสถานที่และชั้น / จุด");
+      setError("เลือกสถานที่กับชั้นก่อน");
       setStep(2);
       return;
     }
     if (zone === "อื่นๆ" && !locationNote.trim()) {
-      setError("กรุณาระบุจุดสังเกตในช่องโปรดระบุ");
+      setError("พิมพ์จุดสังเกตในช่องโปรดระบุ");
       setStep(2);
       return;
     }
     if (category === "ตามหาของหาย" && (!lfType || !lfWhen || !lfReturnPoint)) {
-      setError("กรุณากรอกข้อมูลของหายให้ครบ");
+      setError("กรอกข้อมูลของหายให้ครบก่อนนะ");
       setStep(2);
       return;
     }
     if (!isAnonymous && (!room.trim() || !studentNo.trim())) {
-      setError("กรุณากรอกห้องและเลขที่ หรือเลือกไม่ระบุตัวตน");
+      setError("ใส่ห้องกับเลขที่ หรือติ๊กไม่ระบุตัวตน");
       setStep(3);
       return;
     }
     if (images.some((img) => img.status === "uploading")) {
-      setError("กำลังอัปโหลดรูป กรุณารอสักครู่");
+      setError("รูปยังอัปโหลดอยู่ รอแป๊บ");
       return;
     }
     if (images.some((img) => img.status === "error")) {
-      setError("มีรูปอัปโหลดไม่สำเร็จ — กด Retry ก่อนส่ง");
+      setError("มีรูปอัปไม่สำเร็จ — กด Retry ก่อนส่ง");
       return;
     }
     if (!turnstileToken) {
-      setError("กรุณายืนยันว่าคุณไม่ใช่บอท แล้วลองอีกครั้ง");
+      setError("ยืนยันว่าไม่ใช่บอทก่อนส่งนะ");
       return;
     }
 
@@ -477,7 +479,7 @@ export function ReportForm() {
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
           <div className="text-4xl text-blue-800 mb-3">✓</div>
           <h2 className="text-xl font-bold text-blue-900">รับเรื่องเรียบร้อยแล้ว</h2>
-          <p className="text-sm text-gray-500 mt-2">ขอบคุณที่แจ้งเรื่อง เจ้าหน้าที่จะดำเนินการตามลำดับ</p>
+          <p className="text-sm text-gray-500 mt-2">รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้นะ</p>
           <div className="mt-4 bg-blue-50 rounded-xl p-4 text-left">
             <p className="text-xs text-blue-800 font-semibold mb-1">เลขที่ติดตาม</p>
             <p className="font-mono text-sm break-all">{successId}</p>
@@ -589,7 +591,7 @@ export function ReportForm() {
 
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
         <h1 className="text-2xl font-bold">UDFondue</h1>
-        <p className="text-sm text-blue-100 mt-1">ระบบแจ้งเรื่องสำหรับนักเรียน</p>
+        <p className="text-sm text-blue-100 mt-1">แจ้งปัญหา ของหาย หรือความคิดเห็นได้ที่นี่</p>
         <div className="mt-4 flex justify-center gap-2 text-xs">
           {[1, 2, 3].map((n) => {
             const reachable = n <= step;
@@ -666,6 +668,16 @@ export function ReportForm() {
                 onChange={(e) => setDetail(e.target.value)}
               />
             )}
+            {category === "ปัญหาที่พบ" && (
+              <select
+                className="w-full border rounded-xl px-3 py-2"
+                value={urgency}
+                onChange={(e) => setUrgency(e.target.value)}
+              >
+                <option value="ปกติ">ความเร่งด่วน: ปกติ</option>
+                <option value="เร่งด่วน">เร่งด่วน (เช่น น้ำรั่ว ไฟตก)</option>
+              </select>
+            )}
             <select
               className="w-full border rounded-xl px-3 py-2"
               value={building}
@@ -714,7 +726,7 @@ export function ReportForm() {
               />
             </div>
             <p className="text-xs text-gray-500">
-              ชั้นครึ่งซ้าย · เลขห้อง / จุดสังเกตครึ่งขวา (เช่น หน้าห้อง 421, ศูนย์ HCEC 1)
+              เลือกชั้น แล้วพิมพ์ห้องหรือจุดสังเกตด้านขวา (เช่น หน้าห้อง 421)
             </p>
             <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
               ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
@@ -737,7 +749,7 @@ export function ReportForm() {
                       className="mt-2 text-blue-800 font-semibold"
                       onClick={() => upvote(issue.submitId)}
                     >
-                      เจอปัญหานี้เหมือนกัน (+1){issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}
+                      เจอแบบนี้เหมือนกัน (+1){issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}
                     </button>
                   </div>
                 ))}

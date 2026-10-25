@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { StatusTimeline } from "@/components/StatusTimeline";
+import { HandoffPanel, HandoffInfo } from "@/components/HandoffPanel";
 
 export type TrackReport = {
   submitId: string;
@@ -21,8 +22,11 @@ export type TrackReport = {
   imageUrl?: string;
   afterImageUrl?: string;
   adminNote?: string;
+  studentNote?: string;
+  lfType?: string;
   isAnonymous?: boolean;
   isPublicSummary?: boolean;
+  handoff?: HandoffInfo | null;
 };
 
 function splitUrls(raw?: string) {
@@ -34,14 +38,17 @@ function splitUrls(raw?: string) {
 
 export function TicketDetailView({
   report,
-  showBackLink = true
+  showBackLink = true,
+  onRefresh
 }: {
   report: TrackReport;
   showBackLink?: boolean;
+  onRefresh?: () => void;
 }) {
   const summary = !!report.isPublicSummary;
   const before = summary ? [] : splitUrls(report.imageUrl);
   const after = summary ? [] : splitUrls(report.afterImageUrl);
+  const noteToStudent = report.studentNote || report.adminNote;
 
   return (
     <div className="min-h-dvh pb-safe">
@@ -72,7 +79,7 @@ export function TicketDetailView({
           </p>
           {summary ? (
             <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-900 leading-relaxed">
-              แสดงเฉพาะสถานะสรุป — เปิดจากลิงก์ใน LINE หรือแท็บ “เรื่องของฉัน” เพื่อดูรายละเอียดและรูปภาพ
+              เห็นแค่สถานะคร่าว ๆ — เปิดจากลิงก์ใน LINE เพื่อดูรายละเอียด
             </div>
           ) : (
             <>
@@ -84,33 +91,43 @@ export function TicketDetailView({
                   ? "ไม่ประสงค์ออกนาม"
                   : `${report.name || "-"} · ห้อง ${report.room || "-"}`}
               </p>
-              {report.adminNote && (
-                <div className="bg-blue-50 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-blue-800">หมายเหตุเจ้าหน้าที่</p>
-                  <p>{report.adminNote}</p>
-                </div>
-              )}
             </>
           )}
+          {noteToStudent && (
+            <div className="bg-blue-50 rounded-xl p-3">
+              <p className="text-xs font-semibold text-blue-800">ข้อความจากครู</p>
+              <p className="whitespace-pre-wrap">{noteToStudent}</p>
+            </div>
+          )}
         </section>
+
+        {!summary && (
+          <HandoffPanel
+            submitId={report.submitId}
+            lfType={report.lfType}
+            handoff={report.handoff}
+            onUpdated={onRefresh}
+          />
+        )}
+
         {before.length > 0 && (
           <section className="bg-white rounded-2xl p-4 space-y-2">
-            <h2 className="font-semibold">รูปก่อนแก้ไข</h2>
+            <h2 className="font-semibold">รูปที่แนบมา</h2>
             <div className="grid grid-cols-2 gap-2">
               {before.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="ก่อนแก้ไข" className="rounded-xl border object-cover w-full h-40" />
+                <img key={url} src={url} alt="" className="rounded-xl border object-cover w-full h-40" />
               ))}
             </div>
           </section>
         )}
         {after.length > 0 && (
           <section className="bg-white rounded-2xl p-4 space-y-2">
-            <h2 className="font-semibold">รูปหลังแก้ไข</h2>
+            <h2 className="font-semibold">รูปหลังดำเนินการ</h2>
             <div className="grid grid-cols-2 gap-2">
               {after.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="หลังแก้ไข" className="rounded-xl border object-cover w-full h-40" />
+                <img key={url} src={url} alt="" className="rounded-xl border object-cover w-full h-40" />
               ))}
             </div>
           </section>

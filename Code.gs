@@ -166,6 +166,9 @@ function doPost(e) {
     if (action === "adminModerationHide") {
       return handleAdminModerationHide_(data, timestamp);
     }
+    if (action === "notifyLine") {
+      return handleNotifyLine_(data);
+    }
 
     return handleLegacy_(data, timestamp, payloadSize);
 
@@ -285,6 +288,69 @@ function handleSubmit_(data, timestamp, payloadSize) {
     trackToken: trackToken,
     trackUrl: buildTrackUrl_(submitId, trackToken)
   });
+}
+
+/** LINE-only notifications from Next (Supabase is SoT). */
+function handleNotifyLine_(data) {
+  const kind = String(data.kind || "");
+  const submitId = data.submitId || "";
+  try {
+    if (kind === "submit") {
+      sendLineThankYou_(data.lineId, submitId, data.category || "", data.status || DEFAULT_STATUS, data.trackToken || "");
+      notifyAssignedGroup_(
+        data.assignedGroup || resolveAssignedGroup_(data.category || ""),
+        submitId,
+        data.category || "",
+        data.building || "",
+        data.zone || "",
+        data.detail || ""
+      );
+      return jsonResponse_({ status: "success" });
+    }
+    if (kind === "status") {
+      sendLineStatusUpdate_(
+        data.lineId,
+        submitId,
+        data.status || "",
+        data.studentNote || data.adminNote || "",
+        data.trackToken || ""
+      );
+      return jsonResponse_({ status: "success" });
+    }
+    if (kind === "janitor") {
+      notifyAssignedGroup_(
+        "FACILITY",
+        submitId,
+        data.category || "ปัญหาที่พบ",
+        data.building || "",
+        data.zone || "",
+        "[ส่งต่อภารโรง] " + String(data.detail || "").substring(0, 120)
+      );
+      return jsonResponse_({ status: "success" });
+    }
+    if (kind === "lf_claim") {
+      sendLinePushText_(
+        data.lineId,
+        [
+          "มีคนสนใจของที่คุณแจ้งพบ",
+          "• เลขที่: " + submitId,
+          data.message || "เปิดหน้าติดตามเพื่อสร้างรหัสตอนนัดรับของ",
+          "",
+          "ดูรายละเอียด:",
+          buildTrackUrl_(submitId, "")
+        ].join("\n"),
+        submitId
+      );
+      return jsonResponse_({ status: "success" });
+    }
+    if (data.lineId && data.message) {
+      sendLinePushText_(data.lineId, String(data.message), submitId);
+      return jsonResponse_({ status: "success" });
+    }
+    return jsonResponse_({ status: "error", message: "unknown notify kind" });
+  } catch (err) {
+    return jsonResponse_({ status: "error", message: err.toString() });
+  }
 }
 
 function handleNotifySubmit_(data) {
@@ -966,7 +1032,7 @@ function sendLineStatusUpdate_(userId, submitId, status, adminNote, trackToken) 
     "• สถานะปัจจุบัน: " + (status || "—")
   ];
   if (adminNote) {
-    lines.push("• หมายเหตุจากเจ้าหน้าที่: " + adminNote);
+    lines.push("• ข้อความจากครู: " + adminNote);
   }
   lines.push("");
   lines.push("ดูรายละเอียดและรูปประกอบ:");

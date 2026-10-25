@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { STATUS_OPTIONS } from "@/constants/schoolZones";
 import { compressImageForUpload } from "@/lib/compressImage";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
+import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
 
 type Report = {
   submitId: string;
@@ -19,12 +20,16 @@ type Report = {
   time?: string;
   upvoteCount?: number;
   adminNote?: string;
+  studentNote?: string;
   lfSecretDetail?: string;
   lfType?: string;
   isAnonymous?: boolean;
   imageUrl?: string;
   afterImageUrl?: string;
   mergedToId?: string;
+  assignedTo?: string;
+  urgency?: string;
+  handoff?: { status?: string } | null;
 };
 
 const KANBAN = ["รับเรื่องแล้ว", "กำลังดำเนินการ", "รอข้อมูลเพิ่ม", "เสร็จสิ้น"];
@@ -33,8 +38,11 @@ export function NimdaApp() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [mode, setMode] = useState<"admin" | "dev">("admin");
+  const [devPin, setDevPin] = useState("");
+  const [showDevPin, setShowDevPin] = useState(false);
   const [reports, setReports] = useState<Report[]>([]);
-  const [view, setView] = useState<"table" | "kanban">("table");
+  const [view, setView] = useState<"table" | "kanban" | "site">("table");
   const [filterStatus, setFilterStatus] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Report | null>(null);
@@ -44,6 +52,28 @@ export function NimdaApp() {
   const [mergeIds, setMergeIds] = useState("");
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
+  const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
+
+  const load = useCallback(async () => {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filterStatus, search })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "โหลดไม่สำเร็จ");
+      setReports(data.reports || []);
+      if (data.mode === "admin" || data.mode === "dev") setMode(data.mode);
+      setAuthed(true);
+    } catch (err) {
+      setLoginError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
+      setAuthed(false);
+    } finally {
+      setBusy(false);
+    }
+  }, [filterStatus, search]);
 
   async function login() {
     setLoginError("");
@@ -57,25 +87,65 @@ export function NimdaApp() {
       setLoginError(data.message || "เข้าสู่ระบบไม่สำเร็จ");
       return;
     }
+    setMode("admin");
     setAuthed(true);
     await load();
   }
 
-  async function load() {
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/bootstrap", {
+  async function switchMode(next: "admin" | "dev") {
+    if (next === "admin") {
+      const res = await fetch("/api/admin/mode", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filterStatus, search })
+        body: JSON.stringify({ mode: "admin" })
       });
       const data = await res.json();
-      if (data.status !== "success") throw new Error(data.message || "โหลดไม่สำเร็จ");
-      setReports(data.reports || []);
-      setAuthed(true);
+      if (data.status === "success") {
+        setMode("admin");
+        setShowDevPin(false);
+        setToast("โหมด Admin");
+      }
+      return;
+    }
+    setShowDevPin(true);
+  }
+
+  async function confirmDevMode() {
+    const res = await fetch("/api/admin/mode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "dev", devPin })
+    });
+    const data = await res.json();
+    if (data.status !== "success") {
+      setToast(data.message || "รหัส Dev ไม่ถูกต้อง");
+      return;
+    }
+    setMode("dev");
+    setShowDevPin(false);
+    setDevPin("");
+    setToast("โหมด Dev — ระวังการแก้ข้อมูล");
+  }
+
+  async function loadSiteSettings() {
+    const res = await fetch("/api/admin/site-settings");
+    const data = await res.json();
+    if (data.status === "success") setSiteSettings(data.settings || {});
+  }
+
+  async function saveSiteSettings() {
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/site-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ settings: siteSettings })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message);
+      setToast("บันทึกข้อความเว็บแล้ว");
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
-      setAuthed(false);
+      setToast(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -83,8 +153,13 @@ export function NimdaApp() {
 
   useEffect(() => {
     load().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [load]);
+
+  useTicketsRealtime(load, authed);
+
+  useEffect(() => {
+    if (view === "site") loadSiteSettings();
+  }, [view]);
 
   const sorted = useMemo(() => {
     return [...reports].sort((a, b) => (b.upvoteCount || 0) - (a.upvoteCount || 0));
@@ -93,7 +168,7 @@ export function NimdaApp() {
   function openDetail(r: Report) {
     setSelected(r);
     setEditStatus(r.status);
-    setEditNote(r.adminNote || "");
+    setEditNote(r.studentNote || r.adminNote || "");
     setAfterUrls(
       String(r.afterImageUrl || "")
         .split("\n")
@@ -104,9 +179,6 @@ export function NimdaApp() {
 
   async function saveUpdate() {
     if (!selected) return;
-    if ((editStatus === "เสร็จสิ้น" || editStatus === "ปิดเรื่อง") && afterUrls.length === 0) {
-      setToast("แนะนำแนบรูป After ก่อนปิดเคส");
-    }
     setBusy(true);
     try {
       const res = await fetch("/api/admin/update", {
@@ -116,7 +188,7 @@ export function NimdaApp() {
           action: "adminUpdate",
           submitId: selected.submitId,
           status: editStatus,
-          adminNote: editNote,
+          studentNote: editNote,
           afterImageUrls: afterUrls
         })
       });
@@ -127,6 +199,31 @@ export function NimdaApp() {
       await load();
     } catch (err) {
       setToast(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function assignJanitor() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "assignJanitor",
+          submitId: selected.submitId,
+          studentNote: editNote || "ส่งต่อภารโรงแล้ว กำลังดำเนินการ"
+        })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message);
+      setToast("ส่งต่อภารโรงแล้ว");
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "ส่งต่อไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -170,8 +267,48 @@ export function NimdaApp() {
       });
       const data = await res.json();
       if (data.status !== "success") throw new Error(data.message);
-      setToast("ซ่อนเคสแล้ว");
+      setToast("ซ่อนรายการแล้ว");
       setSelected(null);
+      await load();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unlockHandoff() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "unlockHandoff", submitId: selected.submitId })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message);
+      setToast("ปลดล็อกรหัสแล้ว");
+      await load();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function forceCancelHandoff() {
+    if (!selected) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/update", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "forceCancelHandoff", submitId: selected.submitId })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message);
+      setToast("ยกเลิกเคลมแล้ว");
       await load();
     } catch (err) {
       setToast(err instanceof Error ? err.message : "ไม่สำเร็จ");
@@ -203,6 +340,8 @@ export function NimdaApp() {
       "building",
       "zone",
       "upvoteCount",
+      "urgency",
+      "assignedTo",
       "detail"
     ];
     const rows = sorted.map((r) =>
@@ -215,6 +354,8 @@ export function NimdaApp() {
         r.building,
         r.zone,
         r.upvoteCount || 0,
+        r.urgency || "",
+        r.assignedTo || "",
         `"${String(r.detail || "").replace(/"/g, '""')}"`
       ].join(",")
     );
@@ -231,12 +372,12 @@ export function NimdaApp() {
     return (
       <div className="min-h-dvh flex items-center justify-center px-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8 space-y-4">
-          <h1 className="text-xl font-bold text-center">UDFondue — สำหรับเจ้าหน้าที่</h1>
-          <p className="text-xs text-gray-500 text-center">หน้านี้สำหรับครู/เจ้าหน้าที่เท่านั้น</p>
+          <h1 className="text-xl font-bold text-center">สำหรับครู / เจ้าหน้าที่</h1>
+          <p className="text-xs text-gray-500 text-center">ดูคิว คุมสถานะ และส่งต่อภารโรง</p>
           <input
             type="password"
             className="w-full border rounded-xl px-3 py-3"
-            placeholder="รหัสผ่านเจ้าหน้าที่"
+            placeholder="รหัสผ่าน"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && login()}
@@ -260,23 +401,48 @@ export function NimdaApp() {
         <div className="max-w-6xl mx-auto flex flex-wrap gap-2 items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">จัดการเรื่องแจ้ง</h1>
-            <p className="text-xs text-blue-100">Nimda Pro</p>
+            <p className="text-xs text-blue-100">โหมด {mode === "dev" ? "Dev" : "Admin"}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <div className="flex rounded-lg overflow-hidden border border-white/30 text-sm">
+              <button
+                type="button"
+                className={`px-3 py-1.5 ${mode === "admin" ? "bg-white text-blue-900" : "bg-white/10"}`}
+                onClick={() => switchMode("admin")}
+              >
+                Admin
+              </button>
+              <button
+                type="button"
+                className={`px-3 py-1.5 ${mode === "dev" ? "bg-amber-300 text-amber-950" : "bg-white/10"}`}
+                onClick={() => switchMode("dev")}
+              >
+                Dev
+              </button>
+            </div>
             <button
               type="button"
               className={`px-3 py-1.5 rounded-lg text-sm ${view === "table" ? "bg-white text-blue-900" : "bg-white/20"}`}
               onClick={() => setView("table")}
             >
-              ตาราง
+              รายการ
             </button>
             <button
               type="button"
               className={`px-3 py-1.5 rounded-lg text-sm ${view === "kanban" ? "bg-white text-blue-900" : "bg-white/20"}`}
               onClick={() => setView("kanban")}
             >
-              Kanban
+              แยกสถานะ
             </button>
+            {mode === "dev" && (
+              <button
+                type="button"
+                className={`px-3 py-1.5 rounded-lg text-sm ${view === "site" ? "bg-white text-blue-900" : "bg-white/20"}`}
+                onClick={() => setView("site")}
+              >
+                ข้อความเว็บ
+              </button>
+            )}
             <button type="button" className="px-3 py-1.5 rounded-lg text-sm bg-white/20" onClick={exportCsv}>
               Export CSV
             </button>
@@ -287,31 +453,87 @@ export function NimdaApp() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-2">
-          <select
-            className="border rounded-xl px-3 py-2 bg-white"
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-          >
-            <option value="">ทุกสถานะ</option>
-            {STATUS_OPTIONS.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <input
-            className="flex-1 border rounded-xl px-3 py-2"
-            placeholder="ค้นหา..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && load()}
-          />
-          <button type="button" className="bg-blue-800 text-white px-4 py-2 rounded-xl" onClick={load}>
-            ค้นหา
-          </button>
+      {showDevPin && (
+        <div className="max-w-6xl mx-auto px-4 pt-3">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+            <p className="text-sm text-amber-900 flex-1">ใส่รหัส Dev เพื่อเปิดโหมดแก้ได้ทุกอย่าง</p>
+            <input
+              type="password"
+              className="border rounded-xl px-3 py-2"
+              placeholder="DEV_PIN"
+              value={devPin}
+              onChange={(e) => setDevPin(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && confirmDevMode()}
+            />
+            <button type="button" className="bg-amber-500 text-white px-4 py-2 rounded-xl text-sm font-semibold" onClick={confirmDevMode}>
+              เปิด Dev
+            </button>
+            <button type="button" className="text-sm underline text-amber-900" onClick={() => setShowDevPin(false)}>
+              ยกเลิก
+            </button>
+          </div>
         </div>
+      )}
+
+      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4">
+        {view !== "site" && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <select
+              className="border rounded-xl px-3 py-2 bg-white"
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+            >
+              <option value="">ทุกสถานะ</option>
+              {STATUS_OPTIONS.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <input
+              className="flex-1 border rounded-xl px-3 py-2"
+              placeholder="ค้นหาเลขที่ / รายละเอียด / อาคาร"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && load()}
+            />
+            <button type="button" className="bg-blue-800 text-white px-4 py-2 rounded-xl" onClick={load}>
+              ค้นหา
+            </button>
+          </div>
+        )}
+
+        {view === "site" && mode === "dev" && (
+          <div className="bg-white rounded-2xl border p-4 space-y-3">
+            <h2 className="font-bold">ข้อความบนเว็บนักเรียน</h2>
+            {(
+              [
+                ["announce_home", "ประกาศหน้าแรก"],
+                ["track_blurb", "คำอธิบายหน้าติดตาม"],
+                ["lost_found_blurb", "คำอธิบายกระดานของหาย"],
+                ["submit_success", "ข้อความหลังส่งเรื่องสำเร็จ"]
+              ] as const
+            ).map(([key, label]) => (
+              <label key={key} className="block text-sm space-y-1">
+                <span className="font-semibold text-slate-700">{label}</span>
+                <textarea
+                  className="w-full border rounded-xl px-3 py-2"
+                  rows={2}
+                  value={siteSettings[key] || ""}
+                  onChange={(e) => setSiteSettings((prev) => ({ ...prev, [key]: e.target.value }))}
+                />
+              </label>
+            ))}
+            <button
+              type="button"
+              disabled={busy}
+              className="bg-blue-800 text-white px-4 py-2 rounded-xl font-semibold disabled:opacity-50"
+              onClick={saveSiteSettings}
+            >
+              บันทึกข้อความเว็บ
+            </button>
+          </div>
+        )}
 
         {view === "table" && (
           <div className="space-y-2">
@@ -329,9 +551,15 @@ export function NimdaApp() {
                 <p className="text-sm text-gray-600 line-clamp-2 mt-1">{r.detail}</p>
                 <p className="text-xs text-gray-400 mt-2">
                   {r.submitId} · +{r.upvoteCount || 0} · {r.building}/{r.zone}
+                  {r.urgency === "เร่งด่วน" ? " · เร่งด่วน" : ""}
+                  {r.assignedTo === "janitor" ? " · ส่งภารโรงแล้ว" : ""}
+                  {r.handoff?.status ? ` · เคลม:${r.handoff.status}` : ""}
                 </p>
               </button>
             ))}
+            {!busy && sorted.length === 0 && (
+              <p className="text-center text-sm text-gray-500 py-8">ยังไม่มีรายการ</p>
+            )}
           </div>
         )}
 
@@ -387,12 +615,12 @@ export function NimdaApp() {
             <textarea
               className="w-full border rounded-xl px-3 py-2"
               rows={3}
-              placeholder="หมายเหตุเจ้าหน้าที่"
+              placeholder="ข้อความถึงนักเรียน (เห็นบนหน้าติดตาม)"
               value={editNote}
               onChange={(e) => setEditNote(e.target.value)}
             />
             <div>
-              <p className="text-sm font-semibold mb-1">รูป After</p>
+              <p className="text-sm font-semibold mb-1">รูปหลังดำเนินการ</p>
               <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(e) => onAfterFiles(e.target.files)} />
               <div className="flex flex-wrap gap-2 mt-2">
                 {afterUrls.map((u) => (
@@ -401,18 +629,46 @@ export function NimdaApp() {
                 ))}
               </div>
             </div>
-            <div>
-              <p className="text-sm font-semibold mb-1">Merge เคสซ้ำ (ใส่ Submit ID คั่นด้วย comma)</p>
-              <input
-                className="w-full border rounded-xl px-3 py-2"
-                value={mergeIds}
-                onChange={(e) => setMergeIds(e.target.value)}
-                placeholder="UDF-XXXX, UDF-YYYY"
-              />
-              <button type="button" className="mt-2 text-sm text-blue-800 font-semibold" onClick={mergeTickets}>
-                รวมเข้าเคสนี้
-              </button>
-            </div>
+
+            <button
+              type="button"
+              className="w-full border border-blue-800 text-blue-800 py-2.5 rounded-xl text-sm font-semibold"
+              disabled={busy}
+              onClick={assignJanitor}
+            >
+              ส่งต่อภารโรง
+            </button>
+
+            <button
+              type="button"
+              className="w-full border rounded-xl py-2 text-sm"
+              disabled={busy}
+              onClick={forceCancelHandoff}
+            >
+              ยกเลิกเคลมของหาย
+            </button>
+
+            {mode === "dev" && (
+              <div className="space-y-2 border-t pt-3">
+                <p className="text-xs font-semibold text-amber-800">Dev เท่านั้น</p>
+                <div>
+                  <p className="text-sm font-semibold mb-1">รวมเคสซ้ำ (ใส่เลขที่คั่นด้วย comma)</p>
+                  <input
+                    className="w-full border rounded-xl px-3 py-2"
+                    value={mergeIds}
+                    onChange={(e) => setMergeIds(e.target.value)}
+                    placeholder="UDF-XXXX, UDF-YYYY"
+                  />
+                  <button type="button" className="mt-2 text-sm text-blue-800 font-semibold" onClick={mergeTickets}>
+                    รวมเข้าเคสนี้
+                  </button>
+                </div>
+                <button type="button" className="text-sm text-amber-800 underline" onClick={unlockHandoff}>
+                  ปลดล็อกรหัสรับของ
+                </button>
+              </div>
+            )}
+
             <div className="flex gap-2 pt-2">
               <button
                 type="button"

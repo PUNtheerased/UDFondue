@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
+import { isTicketsDbReady } from "@/lib/supabaseAdmin";
+import { listZoneIssues, rowToPublic } from "@/lib/ticketsDb";
 
 export async function GET(req: NextRequest) {
   try {
@@ -8,6 +10,15 @@ export async function GET(req: NextRequest) {
     if (!building || !zone) {
       return NextResponse.json({ status: "success", reports: [] });
     }
+
+    if (isTicketsDbReady()) {
+      const rows = await listZoneIssues(building, zone);
+      return NextResponse.json({
+        status: "success",
+        reports: rows.map((r) => rowToPublic(r))
+      });
+    }
+
     const result = await callGas({
       action: "getZoneActiveIssues",
       building,
