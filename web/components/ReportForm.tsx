@@ -13,6 +13,7 @@ import { compressImageForUpload } from "@/lib/compressImage";
 import { rememberTrackId } from "@/lib/recentTracks";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
 import { TurnstileWidget } from "@/components/Turnstile";
+import { allowLocalLineBypass } from "@/lib/runtime";
 
 declare global {
   interface Window {
@@ -180,16 +181,19 @@ export function ReportForm() {
 
   useEffect(() => {
     async function initLiff() {
+      // localhost: ไม่ init/login LIFF — endpoint ชี้ Vercel จะพาออกจากเครื่องตลอด
+      if (allowLocalLineBypass()) {
+        setName("ผู้ใช้งานจำลอง");
+        setLineId("U-TEST-USER-ID");
+        return;
+      }
+
       const liffId = String(process.env.NEXT_PUBLIC_LIFF_ID_REPORT || "").trim();
       try {
         if (!liffId) {
-          if (process.env.NODE_ENV === "production") {
-            setError(
-              "ระบบยังไม่ได้ตั้งค่า LIFF ID — ให้ใส่ NEXT_PUBLIC_LIFF_ID_REPORT บน Vercel แล้ว Redeploy"
-            );
-          }
-          setName("ผู้ใช้งานจำลอง");
-          setLineId("U-TEST-USER-ID");
+          setError(
+            "ระบบยังไม่ได้ตั้งค่า LIFF ID — ให้ใส่ NEXT_PUBLIC_LIFF_ID_REPORT บน Vercel แล้ว Redeploy"
+          );
           return;
         }
         if (!window.liff) {
@@ -225,9 +229,6 @@ export function ReportForm() {
           setError(
             "ระบบยังไม่ได้ตั้งค่า LIFF ID — ตรวจ NEXT_PUBLIC_LIFF_ID_REPORT บน Vercel แล้ว Redeploy"
           );
-        } else if (process.env.NODE_ENV !== "production") {
-          setName("ผู้ใช้งานจำลอง");
-          setLineId("U-TEST-USER-ID");
         } else {
           setError("เข้าสู่ระบบ LINE ไม่สำเร็จ กรุณาปิดแล้วเปิดใหม่จากแอป LINE");
         }
@@ -304,10 +305,11 @@ export function ReportForm() {
   }
 
   async function refreshIdToken() {
-    const allowDev = process.env.NODE_ENV !== "production";
+    if (allowLocalLineBypass()) {
+      return lineId ? `dev:${lineId}` : "dev:U-TEST-USER-ID";
+    }
 
     if (!window.liff) {
-      if (allowDev) return lineId ? `dev:${lineId}` : "dev:U-TEST-USER-ID";
       throw new Error("กรุณาเปิดฟอร์มนี้จากแอป LINE เท่านั้น");
     }
 

@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadRecentTracks, normalizeSubmitIdInput, rememberTrackId } from "@/lib/recentTracks";
+import { allowLocalLineBypass } from "@/lib/runtime";
 
 type MyTicket = {
   submitId: string;
@@ -34,6 +35,11 @@ export function TrackHome() {
 
   useEffect(() => {
     async function initLiff() {
+      if (allowLocalLineBypass()) {
+        setLineId("U-TEST-USER-ID");
+        setDisplayName("ผู้ใช้งานจำลอง");
+        return;
+      }
       const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
       try {
         if (!window.liff || !liffId) return;
@@ -112,6 +118,11 @@ export function TrackHome() {
   }
 
   function loginLine() {
+    if (allowLocalLineBypass()) {
+      setLineId("U-TEST-USER-ID");
+      setDisplayName("ผู้ใช้งานจำลอง");
+      return;
+    }
     const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
     if (!window.liff || !liffId) {
       setMineError("กรุณาเปิดหน้านี้จากแอป LINE เพื่อดูเรื่องของท่าน");

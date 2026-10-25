@@ -6,22 +6,23 @@ export async function verifyLineIdToken(idToken: string) {
     return { ok: false as const, message: "ไม่พบการเข้าสู่ระบบ LINE กรุณาเปิดใหม่จากแอป LINE" };
   }
 
-  if (!channelId) {
-    if (!isProdRuntime() && idToken.startsWith("dev:")) {
+  // localhost / next dev: รับโทเค็นจำลอง แม้มี LINE_CHANNEL_ID ใน .env
+  if (idToken.startsWith("dev:")) {
+    if (!isProdRuntime()) {
       return {
         ok: true as const,
-        sub: idToken.slice(4),
+        sub: idToken.slice(4) || "U-TEST-USER-ID",
         name: "ผู้ใช้ทดสอบ"
       };
     }
+    return { ok: false as const, message: "ไม่สามารถยืนยันตัวตนได้ กรุณาเปิดฟอร์มจากแอป LINE" };
+  }
+
+  if (!channelId) {
     return {
       ok: false as const,
       message: "ระบบยืนยันตัวตน LINE ยังไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล"
     };
-  }
-
-  if (idToken.startsWith("dev:")) {
-    return { ok: false as const, message: "ไม่สามารถยืนยันตัวตนได้ กรุณาเปิดฟอร์มจากแอป LINE" };
   }
 
   const body = new URLSearchParams();
