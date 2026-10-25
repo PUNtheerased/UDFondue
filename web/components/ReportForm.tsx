@@ -141,11 +141,24 @@ export function ReportForm() {
 
   useEffect(() => {
     async function initLiff() {
-      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_REPORT || "";
+      const liffId = String(process.env.NEXT_PUBLIC_LIFF_ID_REPORT || "").trim();
       try {
-        if (!window.liff || !liffId) {
+        if (!liffId) {
+          if (process.env.NODE_ENV === "production") {
+            setError(
+              "ระบบยังไม่ได้ตั้งค่า LIFF ID — ให้ใส่ NEXT_PUBLIC_LIFF_ID_REPORT บน Vercel แล้ว Redeploy"
+            );
+          }
           setName("ผู้ใช้งานจำลอง");
           setLineId("U-TEST-USER-ID");
+          return;
+        }
+        if (!window.liff) {
+          // รอ SDK จาก layout โหลดสักครู่
+          await new Promise((r) => setTimeout(r, 400));
+        }
+        if (!window.liff) {
+          setError("โหลด LINE LIFF ไม่สำเร็จ กรุณาเปิดใหม่จากแอป LINE");
           return;
         }
         await window.liff.init({ liffId });
@@ -156,9 +169,18 @@ export function ReportForm() {
         const profile = await window.liff.getProfile();
         setName(profile.displayName);
         setLineId(profile.userId);
-      } catch {
-        setName("ผู้ใช้งานจำลอง");
-        setLineId("U-TEST-USER-ID");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (/liffId/i.test(msg)) {
+          setError(
+            "ระบบยังไม่ได้ตั้งค่า LIFF ID — ตรวจ NEXT_PUBLIC_LIFF_ID_REPORT บน Vercel แล้ว Redeploy"
+          );
+        } else if (process.env.NODE_ENV !== "production") {
+          setName("ผู้ใช้งานจำลอง");
+          setLineId("U-TEST-USER-ID");
+        } else {
+          setError("เข้าสู่ระบบ LINE ไม่สำเร็จ กรุณาปิดแล้วเปิดใหม่จากแอป LINE");
+        }
       }
     }
     initLiff();
