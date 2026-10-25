@@ -6,7 +6,7 @@
  * การ Save อย่างเดียวไม่ทำให้ Web App URL ใช้โค้ดใหม่
  */
 
-const API_VERSION = "v12-supabase-mirror";
+const API_VERSION = "v13-audit-hardening";
 const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v11";
 const SHEET_REPAIR_CACHE_KEY = "sheet_repair_v8";
 const LOG_COLUMNS = 9;
@@ -14,11 +14,10 @@ const SPREADSHEET_ID = "19pIiTGsPMHbyTxULJDtiPbavmkCS07FBH2E5iHcd1KE";
 const SHEET_NAME = "UDFondue_Database";
 const LOG_SHEET_NAME = "UDFondue_Log";
 const FOLDER_ID = "1zP6mUhrI7q-Qf-bgA5c4HJwIYU6LnpyJ";
-/** อย่า hardcode token — ใส่ใน Script Properties: LINE_CHANNEL_ACCESS_TOKEN */
+/** อย่า hardcode secrets — ใส่ใน Script Properties */
 const LIFF_TRACK_URL = "https://liff.line.me/2010319415-VtukiTkR";
 const LIFF_REPORT_URL = "https://liff.line.me/2010319415-epnUUdNV";
 const PUBLIC_TRACK_BASE = "https://ud-fondue.vercel.app/track";
-const ADMIN_PASSWORD = "UDFondue123WoWoWo";
 const ADMIN_TOKEN_TTL_SEC = 28800;
 const DEFAULT_STATUS = "รับเรื่องแล้ว";
 const TZ = "GMT+7";
@@ -29,6 +28,26 @@ function getLineAccessToken_() {
   if (fromProps) return fromProps;
   // fallback เก่า (ถ้ายังมีใน property อื่น)
   return String(props.getProperty("LINE_ACCESS_TOKEN") || "").trim();
+}
+
+function getGasApiKey_() {
+  return String(PropertiesService.getScriptProperties().getProperty("GAS_API_KEY") || "").trim();
+}
+
+function getAdminPassword_() {
+  return String(PropertiesService.getScriptProperties().getProperty("ADMIN_PASSWORD") || "").trim();
+}
+
+/** ตรวจ apiKey จาก Next — บังคับถ้าตั้ง GAS_API_KEY ไว้ */
+function assertGasApiKey_(data) {
+  const expected = getGasApiKey_();
+  if (!expected) {
+    throw new Error("ยังไม่ได้ตั้ง GAS_API_KEY ใน Script Properties");
+  }
+  const got = String((data && (data.apiKey || data.gasApiKey)) || "").trim();
+  if (!got || got !== expected) {
+    throw new Error("ไม่มีสิทธิ์เรียก GAS (apiKey ไม่ถูกต้อง)");
+  }
 }
 
 const STATUS_OPTIONS = [
@@ -124,6 +143,7 @@ function doPost(e) {
 
   try {
     const data = parsePayload_(e);
+    assertGasApiKey_(data);
     const action = data.action || "legacy";
 
     if (action === "submit") {
@@ -688,10 +708,11 @@ function handleAdminList_(data) {
 }
 
 function authenticateAdminPassword_(password) {
-  if (!ADMIN_PASSWORD || ADMIN_PASSWORD === "YOUR_ADMIN_PASSWORD") {
-    return { ok: false, message: "ยังไม่ได้ตั้งรหัส Admin ใน Code.gs" };
+  const adminPassword = getAdminPassword_();
+  if (!adminPassword) {
+    return { ok: false, message: "ยังไม่ได้ตั้ง ADMIN_PASSWORD ใน Script Properties" };
   }
-  if (password !== ADMIN_PASSWORD) {
+  if (password !== adminPassword) {
     return { ok: false, message: "รหัสผ่านไม่ถูกต้อง" };
   }
   const token = Utilities.getUuid();
@@ -1062,9 +1083,12 @@ function buildSubmitConfirmationMessage_(submitId, category, status, trackToken)
   ].join("\n");
 }
 
-/** Dev: ล้างแถวข้อมูลในชีตหลัก (เหลือหัวตาราง) */
+/** Dev: ล้างแถวข้อมูลในชีตหลัก (เหลือหัวตาราง) — ต้องผ่าน apiKey แล้ว (doPost) */
 function handleAdminPurgeSheet_(data) {
-  if (!verifyAdminToken_(data.adminToken) && String(data.password || "") !== ADMIN_PASSWORD) {
+  // อนุญาต: adminToken ที่ verify ได้ หรือเรียกจาก Next ที่ trusted (มี apiKey แล้ว)
+  const tokenOk = verifyAdminToken_(data.adminToken);
+  const trustedNext = data.trustedNext === true || data.trustedNext === "true";
+  if (!tokenOk && !trustedNext) {
     return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์" });
   }
   if (String(data.confirm || "") !== "ล้างข้อมูลทั้งหมด") {

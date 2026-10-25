@@ -43,6 +43,10 @@ function sanitizeTrackResult(result: GasTrack, listOwned = false) {
   return result;
 }
 
+function normSubmitId(raw: unknown) {
+  return String(raw || "").trim().toUpperCase();
+}
+
 async function enrichReport(submitId: string, lineId?: string, full = false) {
   const row = await getTicketBySubmitId(submitId);
   if (!row || row.merged_to_id) return null;
@@ -60,6 +64,18 @@ async function enrichReport(submitId: string, lineId?: string, full = false) {
   return pub;
 }
 
+async function resolveViewerLineId(body: Record<string, unknown>) {
+  if (body.idToken) {
+    const auth = await verifyLineIdToken(String(body.idToken));
+    if (!auth.ok) return { ok: false as const, message: auth.message };
+    return { ok: true as const, lineId: auth.sub };
+  }
+  if (!isProdRuntime() && body.lineId) {
+    return { ok: true as const, lineId: String(body.lineId) };
+  }
+  return { ok: false as const, message: "เข้าสู่ระบบ LINE ก่อน" };
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -67,22 +83,11 @@ export async function POST(req: NextRequest) {
 
     if (isTicketsDbReady()) {
       if (action === "trackList") {
-        let lineId = "";
-        if (body.idToken) {
-          const auth = await verifyLineIdToken(String(body.idToken));
-          if (!auth.ok) {
-            return NextResponse.json({ status: "error", message: auth.message }, { status: 401 });
-          }
-          lineId = auth.sub;
-        } else if (!isProdRuntime() && body.lineId) {
-          lineId = String(body.lineId);
+        const viewer = await resolveViewerLineId(body);
+        if (!viewer.ok) {
+          return NextResponse.json({ status: "error", message: viewer.message }, { status: 401 });
         }
-        if (!lineId) {
-          return NextResponse.json(
-            { status: "error", message: "เข้าสู่ระบบ LINE ก่อนเพื่อดูเรื่องของตัวเอง" },
-            { status: 401 }
-          );
-        }
+        const lineId = viewer.lineId;
         const rows = await listTicketsByLineId(lineId);
         const reports = [];
         for (const row of rows) {
@@ -91,7 +96,6 @@ export async function POST(req: NextRequest) {
           const handoff = await getActiveHandoff(row.submit_id);
           if (handoff) pub.handoff = handoffToPublic(handoff, lineId);
           const safe = stripPublicReport({ ...pub } as Record<string, unknown>);
-          // เจ้าของเรื่องเก็บ token ไว้เปิดดูละเอียดจากลิงก์
           safe.trackToken = row.track_token;
           reports.push(safe);
         }
@@ -99,19 +103,14 @@ export async function POST(req: NextRequest) {
       }
 
       if (action === "trackDetail") {
-        let lineId = "";
-        if (body.idToken) {
-          const auth = await verifyLineIdToken(String(body.idToken));
-          if (!auth.ok) {
-            return NextResponse.json({ status: "error", message: auth.message }, { status: 401 });
-          }
-          lineId = auth.sub;
-        } else if (!isProdRuntime() && body.lineId) {
-          lineId = String(body.lineId);
+        const viewer = await resolveViewerLineId(body);
+        if (!viewer.ok) {
+          return NextResponse.json({ status: "error", message: viewer.message }, { status: 401 });
         }
-        const submitId = String(body.submitId || "");
+        const lineId = viewer.lineId;
+        const submitId = normSubmitId(body.submitId);
         const row = await getTicketBySubmitId(submitId);
-        if (!lineId || !row || row.line_id !== lineId) {
+        if (!row || row.line_id !== lineId) {
           return NextResponse.json({ status: "error", message: "ไม่พบเรื่องนี้" }, { status: 404 });
         }
         const report = await enrichReport(submitId, lineId, true);
@@ -121,12 +120,11 @@ export async function POST(req: NextRequest) {
       }
 
       if (action === "trackLookup") {
-        const submitId = String(body.submitId || "").trim().toUpperCase();
+        const submitId = normSubmitId(body.submitId);
         const row = await getTicketBySubmitId(submitId);
         if (!row || row.merged_to_id) {
           return NextResponse.json({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" }, { status: 404 });
         }
-        // ถ้าล็อกอิน LINE และเป็นเจ้าของเรื่อง — ส่งรายละเอียดเต็มเลย
         if (body.idToken) {
           const auth = await verifyLineIdToken(String(body.idToken));
           if (auth.ok && auth.sub === row.line_id) {
@@ -136,21 +134,23 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ status: "success", report: safe });
           }
         }
-        const summary = {
-          submitId: row.submit_id,
-          status: row.status,
-          category: row.category,
-          date: row.date_th,
-          time: row.time_th,
-          building: row.building,
-          zone: row.zone,
-          isPublicSummary: true
-        };
-        return NextResponse.json({ status: "success", report: summary });
+        return NextResponse.json({
+          status: "success",
+          report: {
+            submitId: row.submit_id,
+            status: row.status,
+            category: row.category,
+            date: row.date_th,
+            time: row.time_th,
+            building: row.building,
+            zone: row.zone,
+            isPublicSummary: true
+          }
+        });
       }
 
-      // trackPublicDetail — เต็มเมื่อมี trackToken ถูกต้อง หรือเป็นเจ้าของที่ล็อกอิน LINE
-      const submitId = String(body.submitId || "");
+      // trackPublicDetail
+      const submitId = normSubmitId(body.submitId);
       const trackToken = String(body.trackToken || "");
       const row = await getTicketBySubmitId(submitId);
       if (!row || row.merged_to_id) {
@@ -189,9 +189,10 @@ export async function POST(req: NextRequest) {
             time: row.time_th,
             building: row.building,
             zone: row.zone,
-            studentNote: row.student_note,
+            // ไม่ส่ง studentNote ในสรุปสาธารณะ
             isPublicSummary: !isParty,
             detail: isParty ? row.detail : undefined,
+            studentNote: isParty ? row.student_note : undefined,
             handoff: handoff && viewerLineId ? handoffToPublic(handoff, viewerLineId) : null
           }
         });
@@ -203,19 +204,28 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    if (action === "trackList") {
-      const result = (await callGas({
-        action: "trackList",
-        lineId: body.lineId
-      })) as GasTrack;
-      return NextResponse.json(sanitizeTrackResult(result, true));
+    // Production: ไม่มี Supabase SoT — ปิด GAS track ที่เชื่อ lineId ดิบ
+    if (isProdRuntime()) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "ระบบติดตามยังไม่พร้อม (ต้องตั้ง SUPABASE_SERVICE_ROLE)",
+          code: "TRACK_DB_REQUIRED"
+        },
+        { status: 503 }
+      );
     }
 
-    if (action === "trackDetail") {
+    // Dev fallback เท่านั้น — ต้องมี idToken ก่อนส่ง lineId
+    if (action === "trackList" || action === "trackDetail") {
+      const viewer = await resolveViewerLineId(body);
+      if (!viewer.ok) {
+        return NextResponse.json({ status: "error", message: viewer.message }, { status: 401 });
+      }
       const result = (await callGas({
-        action: "trackDetail",
-        lineId: body.lineId,
-        submitId: body.submitId
+        action,
+        lineId: viewer.lineId,
+        submitId: normSubmitId(body.submitId)
       })) as GasTrack;
       return NextResponse.json(sanitizeTrackResult(result, true));
     }
@@ -223,14 +233,14 @@ export async function POST(req: NextRequest) {
     if (action === "trackLookup") {
       const result = (await callGas({
         action: "trackLookup",
-        submitId: body.submitId
+        submitId: normSubmitId(body.submitId)
       })) as GasTrack;
       return NextResponse.json(sanitizeTrackResult(result, false));
     }
 
     const result = (await callGas({
       action: "trackPublicDetail",
-      submitId: body.submitId,
+      submitId: normSubmitId(body.submitId),
       trackToken: body.trackToken
     })) as GasTrack;
     return NextResponse.json(sanitizeTrackResult(result, false));

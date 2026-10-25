@@ -92,8 +92,9 @@ export async function POST(req: NextRequest) {
         byRole
       });
 
+      let lineNotify: Awaited<ReturnType<typeof notifyLine>> | null = null;
       if (body.status && row.line_id) {
-        await notifyLine({
+        lineNotify = await notifyLine({
           kind: "status",
           lineId: row.line_id,
           submitId,
@@ -101,9 +102,19 @@ export async function POST(req: NextRequest) {
           studentNote: note,
           trackToken: row.track_token
         });
+        if (lineNotify.status === "error") {
+          console.error("admin status LINE notify failed", lineNotify);
+        }
       }
 
-      return NextResponse.json({ status: "success", message: "บันทึกแล้ว" });
+      return NextResponse.json({
+        status: "success",
+        message:
+          lineNotify && lineNotify.status !== "success"
+            ? `บันทึกแล้ว แต่แจ้ง LINE ไม่ครบ: ${lineNotify.message || lineNotify.status}`
+            : "บันทึกแล้ว",
+        lineNotify
+      });
     }
 
     const gasToken = session.startsWith("gas:") ? session.slice(4) : "session";

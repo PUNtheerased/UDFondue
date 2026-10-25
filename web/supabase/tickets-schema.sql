@@ -1,5 +1,5 @@
 -- UDFondue tickets + handoff + site settings
--- รันใน Supabase SQL Editor (ครั้งเดียว)
+-- รันใน Supabase SQL Editor (ครั้งเดียว หรือรันซ้ำได้ — ใช้ IF NOT EXISTS / DROP IF EXISTS)
 
 create extension if not exists pgcrypto;
 
@@ -82,6 +82,11 @@ create table if not exists public.lf_handoffs (
 create index if not exists lf_handoffs_found_idx on public.lf_handoffs (found_submit_id);
 create index if not exists lf_handoffs_claimant_idx on public.lf_handoffs (claimant_line_id);
 
+-- กันเคลมซ้อน: หนึ่งรายการพบ ต้องมี handoff active ได้แค่แถวเดียว
+create unique index if not exists lf_handoffs_one_active_per_found
+  on public.lf_handoffs (found_submit_id)
+  where status in ('claimed', 'code_active', 'locked');
+
 create table if not exists public.site_settings (
   key text primary key,
   value text not null default '',
@@ -92,7 +97,7 @@ insert into public.site_settings (key, value) values
   ('announce_home', ''),
   ('track_blurb', 'ค้นหาด้วยเลขที่แจ้ง หรือดูเรื่องของท่าน'),
   ('lost_found_blurb', 'Lost & Found'),
-  ('submit_success', 'รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้นะ')
+  ('submit_success', 'รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้')
 on conflict (key) do nothing;
 
 alter table public.tickets enable row level security;
@@ -100,22 +105,53 @@ alter table public.ticket_status_history enable row level security;
 alter table public.lf_handoffs enable row level security;
 alter table public.site_settings enable row level security;
 
--- Anon: อ่านเฉพาะของหายสาธารณะ + site_settings (Realtime ฝั่ง client)
+-- ห้าม anon อ่านตาราง tickets โดยตรง (มี secrets เช่น track_token / line_id)
 drop policy if exists tickets_public_read on public.tickets;
-create policy tickets_public_read on public.tickets
-  for select to anon, authenticated
-  using (
-    is_public_showcase = true
-    and merged_to_id = ''
-    and status not in ('เสร็จสิ้น', 'ปิดเรื่อง', 'REJECTED_MODERATION')
-  );
+
+-- View คอลัมน์สาธารณะเท่านั้น (security_invoker=false = อ่านผ่านสิทธิ์เจ้าของ view ไม่เปิดตาราง tickets ให้ anon)
+create or replace view public.tickets_public
+with (security_invoker = false) as
+select
+  submit_id,
+  created_at,
+  updated_at,
+  category,
+  detail,
+  image_count,
+  image_url,
+  status,
+  status_updated,
+  is_anonymous,
+  building,
+  zone,
+  location_note,
+  lf_type,
+  lf_when,
+  lf_return_point,
+  is_public_showcase,
+  upvote_count,
+  merged_to_id,
+  assigned_group,
+  assigned_to,
+  urgency,
+  after_image_count,
+  after_image_url,
+  date_th,
+  time_th
+from public.tickets
+where
+  is_public_showcase = true
+  and merged_to_id = ''
+  and status not in ('เสร็จสิ้น', 'ปิดเรื่อง', 'REJECTED_MODERATION');
+
+grant select on public.tickets_public to anon, authenticated;
 
 drop policy if exists site_settings_public_read on public.site_settings;
 create policy site_settings_public_read on public.site_settings
   for select to anon, authenticated
   using (true);
 
--- Realtime (ข้ามถ้าเพิ่มไว้แล้ว)
+-- Realtime
 do $$ begin
   alter publication supabase_realtime add table public.tickets;
 exception when duplicate_object then null;

@@ -8,18 +8,22 @@ type LiffLike = {
   getIDToken?: () => string | null;
 };
 
+type EnsureResult = {
+  ok: boolean;
+  bypass: boolean;
+  message?: string;
+  liff?: LiffLike;
+};
+
+const cache = new Map<string, Promise<EnsureResult>>();
+
 function getLiff(): LiffLike | undefined {
   if (typeof window === "undefined") return undefined;
   return (window as unknown as { liff?: LiffLike }).liff;
 }
 
-/** รอ SDK จาก layout แล้ว init — คืน true ถ้าใช้ LIFF จริง */
-export async function ensureLiff(liffId: string): Promise<{
-  ok: boolean;
-  bypass: boolean;
-  message?: string;
-  liff?: LiffLike;
-}> {
+/** รอ SDK จาก layout แล้ว init ครั้งเดียวต่อ liffId ในแท็บนี้ */
+export async function ensureLiff(liffId: string): Promise<EnsureResult> {
   if (allowLocalLineBypass()) {
     return { ok: true, bypass: true };
   }
@@ -33,28 +37,44 @@ export async function ensureLiff(liffId: string): Promise<{
     };
   }
 
-  for (let i = 0; i < 30; i++) {
-    if (getLiff()) break;
-    await new Promise((r) => setTimeout(r, 100));
-  }
+  const existing = cache.get(id);
+  if (existing) return existing;
 
-  const liff = getLiff();
-  if (!liff) {
-    return {
-      ok: false,
-      bypass: false,
-      message: "โหลด LINE ไม่สำเร็จ ลองรีเฟรชหน้า หรือเปิดจากแอป LINE"
-    };
-  }
+  const pending = (async (): Promise<EnsureResult> => {
+    for (let i = 0; i < 30; i++) {
+      if (getLiff()) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
 
+    const liff = getLiff();
+    if (!liff) {
+      return {
+        ok: false,
+        bypass: false,
+        message: "โหลด LINE ไม่สำเร็จ ลองรีเฟรชหน้า หรือเปิดจากแอป LINE"
+      };
+    }
+
+    try {
+      await liff.init({ liffId: id });
+      return { ok: true, bypass: false, liff };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ";
+      // init ซ้ำหลังสำเร็จมัก error — ถ้า logged in แล้วถือว่าใช้ได้
+      if (liff.isLoggedIn?.()) {
+        return { ok: true, bypass: false, liff };
+      }
+      return { ok: false, bypass: false, message };
+    }
+  })();
+
+  cache.set(id, pending);
   try {
-    await liff.init({ liffId: id });
-    return { ok: true, bypass: false, liff };
+    const result = await pending;
+    if (!result.ok) cache.delete(id);
+    return result;
   } catch (err) {
-    return {
-      ok: false,
-      bypass: false,
-      message: err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ"
-    };
+    cache.delete(id);
+    throw err;
   }
 }

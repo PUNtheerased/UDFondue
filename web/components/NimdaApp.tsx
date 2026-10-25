@@ -33,6 +33,7 @@ type Report = {
 };
 
 const KANBAN = ["รับเรื่องแล้ว", "กำลังดำเนินการ", "รอข้อมูลเพิ่ม", "เสร็จสิ้น"];
+const KANBAN_OTHER = "อื่นๆ";
 
 export function NimdaApp() {
   const [authed, setAuthed] = useState(false);
@@ -170,8 +171,10 @@ export function NimdaApp() {
         })
       });
       const data = await res.json();
-      if (data.status !== "success") throw new Error(data.message);
-      setToast("ล้างฐานข้อมูลแล้ว");
+      if (data.status !== "success" && data.status !== "partial") {
+        throw new Error(data.message || "ล้างไม่สำเร็จ");
+      }
+      setToast(data.message || "ล้างฐานข้อมูลแล้ว");
       setPurgeConfirm("");
       setSelected(null);
       await load();
@@ -186,7 +189,8 @@ export function NimdaApp() {
     load().catch(() => {});
   }, [load]);
 
-  useTicketsRealtime(load, authed);
+  // ไม่พึ่ง anon Realtime สำหรับเรื่องส่วนตัว — poll ทุก 15 วิ
+  useTicketsRealtime(load, authed, 15000);
 
   useEffect(() => {
     if (view === "site") loadSiteSettings();
@@ -624,13 +628,15 @@ export function NimdaApp() {
         )}
 
         {view === "kanban" && (
-          <div className="grid md:grid-cols-4 gap-3 overflow-x-auto">
-            {KANBAN.map((col) => (
+          <div className="grid md:grid-cols-5 gap-3 overflow-x-auto">
+            {[...KANBAN, KANBAN_OTHER].map((col) => (
               <div key={col} className="bg-gray-100 rounded-2xl p-2 min-w-[220px]">
                 <p className="text-sm font-bold px-2 py-2">{col}</p>
                 <div className="space-y-2">
                   {sorted
-                    .filter((r) => r.status === col)
+                    .filter((r) =>
+                      col === KANBAN_OTHER ? !KANBAN.includes(r.status) : r.status === col
+                    )
                     .map((r) => (
                       <button
                         key={r.submitId}
@@ -639,7 +645,9 @@ export function NimdaApp() {
                         className="w-full text-left bg-white rounded-xl p-3 shadow-sm"
                       >
                         <p className="text-sm font-semibold line-clamp-2">{r.detail}</p>
-                        <p className="text-xs text-gray-400 mt-1">+{r.upvoteCount || 0}</p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          {col === KANBAN_OTHER ? `${r.status} · ` : ""}+{r.upvoteCount || 0}
+                        </p>
                       </button>
                     ))}
                 </div>

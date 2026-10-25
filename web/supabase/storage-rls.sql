@@ -7,6 +7,9 @@ to public
 using (bucket_id = 'udfondue-images');
 
 -- Allow anon insert into tickets/ and after/ prefixes only
+-- หมายเหตุ (audit): anon อัปโหลดได้โดยไม่ผูก LIFF — ระยะถัดไปควรย้ายผ่าน API ที่ตรวจ idToken
+-- จำกัดโฟลเดอร์แล้ว; ห้าม update/delete จาก client
+drop policy if exists "Anon insert tickets and after" on storage.objects;
 create policy "Anon insert tickets and after"
 on storage.objects for insert
 to anon, authenticated

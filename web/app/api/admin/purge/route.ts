@@ -29,6 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     const cleared: string[] = [];
+    const warnings: string[] = [];
 
     if (isTicketsDbReady()) {
       const sb = getSupabaseAdmin();
@@ -42,22 +43,32 @@ export async function POST(req: NextRequest) {
 
     if (body.clearSheet) {
       try {
-        const gasToken = session.startsWith("gas:") ? session.slice(4) : "session";
+        const gasToken = session.startsWith("gas:") ? session.slice(4) : "";
         await callGas({
           action: "adminPurgeSheet",
-          adminToken: gasToken,
+          adminToken: gasToken || undefined,
+          trustedNext: true,
           confirm
         });
         cleared.push("sheet");
       } catch (err) {
         console.error("purge sheet", err);
+        warnings.push(
+          err instanceof Error
+            ? `ล้างชีตไม่สำเร็จ: ${err.message}`
+            : "ล้างชีตไม่สำเร็จ"
+        );
       }
     }
 
+    const ok = warnings.length === 0;
     return NextResponse.json({
-      status: "success",
-      message: "ล้างฐานข้อมูลแล้ว",
-      cleared
+      status: ok ? "success" : "partial",
+      message: ok
+        ? "ล้างฐานข้อมูลแล้ว"
+        : `ล้างบางส่วนแล้ว — ${warnings.join("; ")}`,
+      cleared,
+      warnings
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Purge failed";

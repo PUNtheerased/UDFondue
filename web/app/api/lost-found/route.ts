@@ -22,27 +22,30 @@ export async function GET(req: NextRequest) {
           rows.map((r) => rowToPublic(r) as unknown as Record<string, unknown>)
         );
         backend = "supabase";
+        // สำเร็จแม้ว่าง — ไม่ดึง Sheet เก่ามาทับ
+        return NextResponse.json(
+          { status: "success", reports, backend },
+          { headers: { "Cache-Control": "no-store" } }
+        );
       } catch (err) {
         console.error("lost-found supabase", err);
+        // ตก GAS เฉพาะเมื่อ Supabase error จริง
       }
     }
 
-    // ถ้า Supabase ว่างหรือยังไม่พร้อม — อ่านจาก Sheets ผ่าน GAS (mirror)
-    if (reports.length === 0) {
-      try {
-        const result = (await callGas({
-          action: "getPublicLostFound",
-          lfType,
-          building
-        })) as { status?: string; reports?: Record<string, unknown>[] };
-        reports = stripPublicReports(result.reports || []);
-        backend = backend === "supabase" ? "supabase+gas" : "gas";
-      } catch (err) {
-        console.error("lost-found gas", err);
-        if (reports.length === 0) {
-          const message = err instanceof Error ? err.message : "Lost-found fetch failed";
-          return NextResponse.json({ status: "error", message }, { status: 500 });
-        }
+    try {
+      const result = (await callGas({
+        action: "getPublicLostFound",
+        lfType,
+        building
+      })) as { status?: string; reports?: Record<string, unknown>[] };
+      reports = stripPublicReports(result.reports || []);
+      backend = backend === "supabase" ? "supabase+gas" : "gas";
+    } catch (err) {
+      console.error("lost-found gas", err);
+      if (reports.length === 0) {
+        const message = err instanceof Error ? err.message : "Lost-found fetch failed";
+        return NextResponse.json({ status: "error", message }, { status: 500 });
       }
     }
 

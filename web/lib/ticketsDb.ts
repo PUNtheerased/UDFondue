@@ -348,6 +348,22 @@ export async function getActiveHandoff(foundSubmitId: string) {
   return (data as HandoffRow) || null;
 }
 
+/** รวม expired — สำหรับสร้างรหัสใหม่หลังหมดอายุ */
+export async function getHandoffForCodeCreate(foundSubmitId: string) {
+  const active = await getActiveHandoff(foundSubmitId);
+  if (active) return active;
+  const sb = getSupabaseAdmin();
+  const { data } = await sb
+    .from("lf_handoffs")
+    .select("*")
+    .eq("found_submit_id", foundSubmitId)
+    .eq("status", "expired")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as HandoffRow) || null;
+}
+
 export async function getHandoffForUser(foundSubmitId: string, lineId: string) {
   const sb = getSupabaseAdmin();
   const { data } = await sb
@@ -404,7 +420,13 @@ export async function claimFoundItem(foundSubmitId: string, claimantLineId: stri
     })
     .select("*")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    // unique partial index / (found, claimant) — มีคนเคลมอยู่แล้ว
+    if (error.code === "23505") {
+      throw new Error("มีคนเคลมรายการนี้อยู่แล้ว");
+    }
+    throw new Error(error.message);
+  }
 
   await updateTicketStatus({
     submitId: foundSubmitId,
@@ -420,9 +442,12 @@ export async function createHandoffCode(foundSubmitId: string, holderLineId: str
   if (!ticket) throw new Error("ไม่พบรายการ");
   if (ticket.line_id !== holderLineId) throw new Error("เฉพาะผู้ถือของสร้างรหัสได้");
 
-  let handoff = await getActiveHandoff(foundSubmitId);
+  const handoff = await getHandoffForCodeCreate(foundSubmitId);
   if (!handoff) throw new Error("ยังไม่มีคนเคลม — รอเจ้าของกดนี่ของฉันก่อน");
   if (handoff.holder_line_id !== holderLineId) throw new Error("ไม่มีสิทธิ์สร้างรหัส");
+  if (!["claimed", "code_active", "locked", "expired"].includes(handoff.status)) {
+    throw new Error("สถานะนี้สร้างรหัสไม่ได้");
+  }
 
   const code = generatePickupCode();
   const codeHash = hashPickupCode(code, foundSubmitId);
