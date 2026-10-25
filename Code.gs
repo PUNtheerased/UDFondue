@@ -1240,7 +1240,7 @@ function sendLineStatusUpdate_(userId, submitId, status, adminNote, trackToken) 
     "• สถานะปัจจุบัน: " + (status || "—")
   ];
   if (adminNote) {
-    lines.push("• ข้อความจากครู: " + adminNote);
+    lines.push("• ข้อความจากผู้ดูแลระบบ: " + adminNote);
   }
   lines.push("");
   lines.push("ดูรายละเอียดและรูปประกอบ:");

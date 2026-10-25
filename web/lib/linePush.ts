@@ -1,5 +1,12 @@
 /** Push LINE จาก Next โดยใช้ LINE_CHANNEL_ACCESS_TOKEN ใน env (Vercel / .env) */
 
+/** ถ้าข้อความมี \\uXXXX แบบตัวอักษร (ไม่ใช่ JSON) แปลงกลับเป็นอักขระจริง */
+function decodeLiteralUnicodeEscapes(input: string) {
+  return String(input || "").replace(/\\u([0-9a-fA-F]{4})/gi, (_, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
+
 export async function pushLineText(to: string, text: string) {
   const token = String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim();
   if (!token) {
@@ -9,15 +16,17 @@ export async function pushLineText(to: string, text: string) {
     return { ok: false as const, reason: "skip_test_user" };
   }
 
+  const safeText = decodeLiteralUnicodeEscapes(text);
+
   const res = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json; charset=utf-8"
     },
     body: JSON.stringify({
       to,
-      messages: [{ type: "text", text }]
+      messages: [{ type: "text", text: safeText }]
     })
   });
 

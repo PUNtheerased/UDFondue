@@ -1,10 +1,21 @@
 import { callGas } from "@/lib/gas";
 import { buildTrackUrl, pushLineText } from "@/lib/linePush";
 
+/** สร้าง emoji จาก code point — กันไฟล์/บิลด์ทำให้โชว์เป็น \\uD83D\\uDE4F */
+const EMOJI = {
+  pray: String.fromCodePoint(0x1f64f),
+  pin: String.fromCodePoint(0x1f4cc),
+  search: String.fromCodePoint(0x1f50d),
+  point: String.fromCodePoint(0x1f449),
+  yellow: String.fromCodePoint(0x1f7e1),
+  orange: String.fromCodePoint(0x1f7e0),
+  green: String.fromCodePoint(0x1f7e2)
+};
+
 function statusEmoji(status: string) {
-  if (status.includes("เสร็จ") || status.includes("ปิด")) return "🟢";
-  if (status.includes("ดำเนิน") || status.includes("รอ")) return "🟠";
-  return "🟡";
+  if (status.includes("เสร็จ") || status.includes("ปิด")) return EMOJI.green;
+  if (status.includes("ดำเนิน") || status.includes("รอ")) return EMOJI.orange;
+  return EMOJI.yellow;
 }
 
 export function buildSubmitThanksMessage(opts: {
@@ -15,15 +26,15 @@ export function buildSubmitThanksMessage(opts: {
 }) {
   const status = opts.status || "รับเรื่องแล้ว";
   return [
-    "🙏 ขอบคุณสำหรับการแจ้งเรื่องครับ/ค่ะ!",
+    `${EMOJI.pray} ขอบคุณสำหรับการแจ้งเรื่องครับ/ค่ะ!`,
     "ทางเราได้รับข้อมูลของท่านเรียบร้อยแล้ว",
-    "📌 สรุปรายละเอียดการแจ้งเรื่อง",
+    `${EMOJI.pin} สรุปรายละเอียดการแจ้งเรื่อง`,
     `• รหัสติดตาม: ${opts.submitId || "—"}`,
     `• หมวดหมู่: ${opts.category || "—"}`,
     `• สถานะปัจจุบัน: ${statusEmoji(status)} ${status}`,
     "",
-    "🔍 ติดตามสถานะหรือเช็กความคืบหน้าได้ที่:",
-    `👉 ${opts.trackUrl}`
+    `${EMOJI.search} ติดตามสถานะหรือเช็กความคืบหน้าได้ที่:`,
+    `${EMOJI.point} ${opts.trackUrl}`
   ].join("\n");
 }
 
@@ -102,8 +113,12 @@ export async function notifyLine(payload: Record<string, unknown>): Promise<Noti
         `• สถานะปัจจุบัน: ${statusEmoji(status)} ${status}`
       ];
       const note = String(payload.studentNote || payload.adminNote || "");
-      if (note) lines.push(`• ข้อความจากครู: ${note}`);
-      lines.push("", "🔍 ดูรายละเอียด:", `👉 ${buildTrackUrl(submitId, trackToken || undefined)}`);
+      if (note) lines.push(`• ข้อความจากผู้ดูแลระบบ: ${note}`);
+      lines.push(
+        "",
+        `${EMOJI.search} ดูรายละเอียด:`,
+        `${EMOJI.point} ${buildTrackUrl(submitId, trackToken || undefined)}`
+      );
       const pushed = await pushLineText(lineId, lines.join("\n"));
       if (pushed.ok) {
         return { status: "success", via: "next", pushed: true };
@@ -131,8 +146,8 @@ export async function notifyLine(payload: Record<string, unknown>): Promise<Noti
         `• รหัสติดตาม: ${submitId}`,
         String(payload.message || "เปิดหน้าติดตามเพื่อสร้างรหัสตอนนัดรับของ"),
         "",
-        "🔍 ดูรายละเอียด:",
-        `👉 ${trackUrl}`
+        `${EMOJI.search} ดูรายละเอียด:`,
+        `${EMOJI.point} ${trackUrl}`
       ].join("\n");
       const pushed = await pushLineText(lineId, text);
       if (pushed.ok) {

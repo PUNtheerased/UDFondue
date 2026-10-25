@@ -95,7 +95,7 @@ export function TicketDetailView({
           )}
           {noteToStudent && (
             <div className="bg-blue-50 rounded-xl p-3">
-              <p className="text-xs font-semibold text-blue-800">ข้อความจากครู</p>
+              <p className="text-xs font-semibold text-blue-800">ข้อความจากผู้ดูแลระบบ</p>
               <p className="whitespace-pre-wrap">{noteToStudent}</p>
             </div>
           )}
