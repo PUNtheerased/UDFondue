@@ -6,8 +6,8 @@
  * การ Save อย่างเดียวไม่ทำให้ Web App URL ใช้โค้ดใหม่
  */
 
-const API_VERSION = "v9-fast-submit";
-const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v8";
+const API_VERSION = "v11-full-upgrade";
+const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v11";
 const SHEET_REPAIR_CACHE_KEY = "sheet_repair_v8";
 const LOG_COLUMNS = 9;
 const SPREADSHEET_ID = "19pIiTGsPMHbyTxULJDtiPbavmkCS07FBH2E5iHcd1KE";
@@ -17,6 +17,7 @@ const FOLDER_ID = "1zP6mUhrI7q-Qf-bgA5c4HJwIYU6LnpyJ";
 const LINE_ACCESS_TOKEN = "1zQJQDz1un38gxqKc4Y91joSXB6oItmlQY9yG8EduB65R73XcMkHDkJ5pwBEkykFwWWgaRn4nv2sZer6yQglHR6UuJ/LE7Mqe1LsvhmUfKK/ABHu50jIpz6t8FxDuXcwNUo9q+RmWoXoqKUB9yZSIgdB04t89/1O/w1cDnyilFU=";
 const LIFF_TRACK_URL = "https://liff.line.me/2010319415-VtukiTkR";
 const LIFF_REPORT_URL = "https://liff.line.me/2010319415-epnUUdNV";
+const PUBLIC_TRACK_BASE = "https://ud-fondue.vercel.app/track";
 const ADMIN_PASSWORD = "UDFondue123WoWoWo";
 const ADMIN_TOKEN_TTL_SEC = 28800;
 const DEFAULT_STATUS = "รับเรื่องแล้ว";
@@ -27,7 +28,8 @@ const STATUS_OPTIONS = [
   "กำลังดำเนินการ",
   "รอข้อมูลเพิ่ม",
   "เสร็จสิ้น",
-  "ปิดเรื่อง"
+  "ปิดเรื่อง",
+  "REJECTED_MODERATION"
 ];
 
 const COL = {
@@ -45,7 +47,28 @@ const COL = {
   DEBUG: 12,
   STATUS: 13,
   ADMIN_NOTE: 14,
-  STATUS_UPDATED: 15
+  STATUS_UPDATED: 15,
+  IS_ANONYMOUS: 16,
+  CONTACT_OPTIONAL: 17,
+  BUILDING: 18,
+  ZONE: 19,
+  LOCATION_NOTE: 20,
+  GPS_LAT: 21,
+  GPS_LNG: 22,
+  LF_TYPE: 23,
+  LF_WHEN: 24,
+  LF_RETURN_POINT: 25,
+  LF_SECRET_DETAIL: 26,
+  IS_PUBLIC_SHOWCASE: 27,
+  TRACK_TOKEN: 28,
+  UPVOTE_COUNT: 29,
+  UPVOTED_LINE_IDS: 30,
+  MERGED_TO_ID: 31,
+  ASSIGNED_GROUP: 32,
+  AFTER_IMAGE_COUNT: 33,
+  AFTER_IMAGE_URL: 34,
+  STATUS_HISTORY: 35,
+  IMAGE_STORAGE: 36
 };
 
 const SHEET_HEADERS = [
@@ -63,7 +86,28 @@ const SHEET_HEADERS = [
   "Debug",
   "สถานะ",
   "หมายเหตุเจ้าหน้าที่",
-  "อัปเดตสถานะล่าสุด"
+  "อัปเดตสถานะล่าสุด",
+  "ไม่ระบุตัวตน",
+  "ช่องทางติดต่อ",
+  "อาคาร",
+  "โซน",
+  "จุดอ้างอิง",
+  "GPS Lat",
+  "GPS Lng",
+  "ประเภทของหาย",
+  "เวลาที่หาย/พบ",
+  "จุดรับคืน",
+  "ข้อมูลลับของหาย",
+  "แสดงสาธารณะ",
+  "Track Token",
+  "จำนวนโหวต",
+  "รายชื่อโหวต",
+  "รวมเข้าเคส",
+  "ฝ่ายรับผิดชอบ",
+  "จำนวนรูป After",
+  "ลิงก์รูป After",
+  "ประวัติสถานะ",
+  "ที่เก็บรูป"
 ];
 
 function doPost(e) {
@@ -89,6 +133,18 @@ function doPost(e) {
     if (action === "trackDetail") {
       return handleTrackDetail_(data);
     }
+    if (action === "trackPublicDetail") {
+      return handleTrackPublicDetail_(data);
+    }
+    if (action === "getZoneActiveIssues") {
+      return handleGetZoneActiveIssues_(data);
+    }
+    if (action === "upvoteTicket") {
+      return handleUpvoteTicket_(data);
+    }
+    if (action === "getPublicLostFound") {
+      return handleGetPublicLostFound_(data);
+    }
     if (action === "adminAuth") {
       return handleAdminAuth_(data);
     }
@@ -100,6 +156,12 @@ function doPost(e) {
     }
     if (action === "adminUpdate") {
       return handleAdminUpdate_(data, timestamp);
+    }
+    if (action === "adminMergeTickets") {
+      return handleAdminMergeTickets_(data, timestamp);
+    }
+    if (action === "adminModerationHide") {
+      return handleAdminModerationHide_(data, timestamp);
     }
 
     return handleLegacy_(data, timestamp, payloadSize);
@@ -125,23 +187,42 @@ function doGet(e) {
 // ---------- Action handlers ----------
 
 function handleSubmit_(data, timestamp, payloadSize) {
-  const name = data.name || "ไม่ระบุชื่อ";
   const lineId = data.lineId || "ไม่ระบุ ID";
-  const room = data.room || "ไม่ระบุห้อง";
-  const studentNo = data.studentNo || "ไม่ระบุเลขที่";
+  if (!checkLineRateLimit_(lineId, "submit", 5, 600)) {
+    writeLog_(timestamp, payloadSize, "submit", 0, 0, 0, "rate_limit", "rejected", data.submitId || "");
+    return jsonResponse_({ status: "error", message: "ส่งบ่อยเกินไป กรุณารอสักครู่", code: "RATE_LIMIT" });
+  }
+
+  const isAnonymous = !!data.isAnonymous;
+  const name = isAnonymous ? "ไม่ประสงค์ออกนาม" : (data.name || "ไม่ระบุชื่อ");
+  const room = isAnonymous ? "" : (data.room || "");
+  const studentNo = isAnonymous ? "" : (data.studentNo || "");
   let category = data.category || "ไม่ได้เลือก";
   const detail = data.detail || "";
-  const submitId = data.submitId || "";
-  const imageCount = data.imageCount || 0;
+  const submitId = data.submitId || ("UDF-" + Utilities.getUuid().replace(/-/g, "").substring(0, 8).toUpperCase());
 
   if (category === "other" || category === "อื่นๆ") {
     category = "อื่นๆ: " + (data.otherCategory || "ไม่ระบุหัวข้อ");
   }
 
-  const imageUrl = imageCount > 0 ? "กำลังอัปโหลด..." : "";
+  const textBlob = [category, detail, data.otherCategory || "", data.lfSecretDetail || ""].join(" ");
+  if (containsProfanity_(textBlob)) {
+    writeLog_(timestamp, payloadSize, "submit", 0, 0, 0, "profanity", "rejected", submitId);
+    return jsonResponse_({ status: "error", message: "พบข้อความไม่เหมาะสม กรุณาแก้ไขก่อนส่ง", code: "PROFANITY" });
+  }
+
+  const imageUrls = normalizeImageUrls_(data);
+  const imageCount = imageUrls.length || Number(data.imageCount) || 0;
+  const imageUrl = imageUrls.join("\n");
+  const trackToken = Utilities.getUuid().replace(/-/g, "");
+  const assignedGroup = resolveAssignedGroup_(category);
+  const statusUpdated = formatDateTimeTh_(timestamp);
+  const statusHistory = JSON.stringify([{ status: DEFAULT_STATUS, at: statusUpdated, by: "system" }]);
+  const isLf = category.indexOf("ตามหาของหาย") === 0 || category.indexOf("พบของ") === 0 || !!data.lfType;
+  const isPublicShowcase = data.isPublicShowcase === true || data.isPublicShowcase === "true" || (isLf && data.isPublicShowcase !== false && data.isPublicShowcase !== "false");
 
   const sheet = getSheet_();
-  ensureSheetHeaders_(sheet, false);
+  ensureSheetHeaders_(sheet, true);
   const newRow = appendReportRow_(sheet, {
     timestamp: timestamp,
     lineId: lineId,
@@ -156,17 +237,51 @@ function handleSubmit_(data, timestamp, payloadSize) {
     debug: "",
     status: DEFAULT_STATUS,
     adminNote: "",
-    statusUpdated: formatDateTimeTh_(timestamp)
+    statusUpdated: statusUpdated,
+    isAnonymous: isAnonymous ? "TRUE" : "FALSE",
+    contactOptional: data.contactOptional || "",
+    building: data.building || "",
+    zone: data.zone || "",
+    locationNote: data.locationNote || "",
+    gpsLat: data.gpsLat || "",
+    gpsLng: data.gpsLng || "",
+    lfType: data.lfType || "",
+    lfWhen: data.lfWhen || "",
+    lfReturnPoint: data.lfReturnPoint || "",
+    lfSecretDetail: data.lfSecretDetail || "",
+    isPublicShowcase: isPublicShowcase ? "TRUE" : "FALSE",
+    trackToken: trackToken,
+    upvoteCount: 0,
+    upvotedLineIds: "",
+    mergedToId: "",
+    assignedGroup: assignedGroup,
+    afterImageCount: 0,
+    afterImageUrl: "",
+    statusHistory: statusHistory,
+    imageStorage: data.imageStorage || (imageUrls.length ? "supabase" : "")
   });
   fixTextColumnsAfterAppend_(sheet, newRow, room, studentNo);
 
   try {
-    writeLog_(timestamp, payloadSize, "submit", imageCount, 0, 0, "", "success", submitId);
+    writeLog_(timestamp, payloadSize, "submit", imageCount, imageCount, imageCount ? 1 : 0, "", "success", submitId);
   } catch (logErr) {
     Logger.log("writeLog submit: " + logErr.toString());
   }
 
-  return jsonResponse_({ status: "success", message: "บันทึกข้อมูลเรียบร้อยแล้ว" });
+  try {
+    sendLineThankYou_(lineId, submitId, category, DEFAULT_STATUS, trackToken);
+    notifyAssignedGroup_(assignedGroup, submitId, category, data.building || "", data.zone || "", detail);
+  } catch (notifyErr) {
+    Logger.log("submit notify: " + notifyErr.toString());
+  }
+
+  return jsonResponse_({
+    status: "success",
+    message: "บันทึกข้อมูลเรียบร้อยแล้ว",
+    submitId: submitId,
+    trackToken: trackToken,
+    trackUrl: buildTrackUrl_(submitId, trackToken)
+  });
 }
 
 function handleNotifySubmit_(data) {
@@ -187,7 +302,7 @@ function handleNotifySubmit_(data) {
     return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์" });
   }
 
-  sendLineThankYou_(lineId, submitId, report.category, report.status);
+  sendLineThankYou_(lineId, submitId, report.category, report.status, report.trackToken);
   return jsonResponse_({ status: "success", message: "ส่งการแจ้งเตือน LINE แล้ว" });
 }
 
@@ -328,7 +443,10 @@ function handleTrackList_(data) {
   for (let i = 0; i < rows.length; i++) {
     const report = rowToReportObject_(rows[i], i + 2);
     if (String(report.lineId) === String(lineId)) {
-      reports.push(report);
+      const safe = toTrackReport_(report);
+      safe.trackToken = report.trackToken;
+      safe.trackUrl = buildTrackUrl_(report.submitId, report.trackToken);
+      reports.push(safe);
     }
   }
 
@@ -350,12 +468,15 @@ function handleTrackDetail_(data) {
     return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" });
   }
 
-  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0]);
+  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
   if (String(report.lineId) !== String(lineId)) {
     return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์ดูเรื่องนี้" });
   }
 
-  return jsonResponse_({ status: "success", report: report });
+  const safe = toTrackReport_(report);
+  safe.trackToken = report.trackToken;
+  safe.trackUrl = buildTrackUrl_(report.submitId, report.trackToken);
+  return jsonResponse_({ status: "success", report: safe });
 }
 
 // ---------- Admin ----------
@@ -431,7 +552,11 @@ function getAdminReports_(filterStatus, search) {
         report.studentNo,
         report.category,
         report.submitId,
-        report.detail
+        report.detail,
+        report.building,
+        report.zone,
+        report.lfSecretDetail,
+        report.assignedGroup
       ].join(" ").toLowerCase();
       if (haystack.indexOf(searchLower) === -1) continue;
     }
@@ -466,10 +591,229 @@ function handleAdminUpdate_(data, timestamp) {
   }
 
   const updatedAt = formatDateTimeTh_(timestamp);
+  const prev = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
   getSingleRowRange_(sheet, row, COL.STATUS, COL.STATUS_UPDATED).setValues([[status, adminNote, updatedAt]]);
 
-  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0]);
+  const afterUrls = Array.isArray(data.afterImageUrls)
+    ? data.afterImageUrls.map(String).filter(function (u) { return u.indexOf("http") === 0; })
+    : [];
+  if (afterUrls.length) {
+    sheet.getRange(row, COL.AFTER_IMAGE_COUNT).setValue(afterUrls.length);
+    sheet.getRange(row, COL.AFTER_IMAGE_URL).setValue(afterUrls.join("\n"));
+  }
+
+  appendStatusHistory_(sheet, row, status, updatedAt, "admin");
+
+  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
+  if (prev.status !== status) {
+    try {
+      sendLineStatusUpdate_(report.lineId, report.submitId, status, adminNote, report.trackToken);
+    } catch (err) {
+      Logger.log("status notify: " + err.toString());
+    }
+  }
+
+  writeLog_(timestamp, 0, "adminUpdate", 0, 0, 0, status, "success", submitId);
   return jsonResponse_({ status: "success", message: "อัปเดตสถานะเรียบร้อย", report: report });
+}
+
+function handleAdminMergeTickets_(data, timestamp) {
+  if (!verifyAdminToken_(data.adminToken)) {
+    return jsonResponse_({ status: "error", message: "กรุณาเข้าสู่ระบบใหม่" });
+  }
+
+  const intoId = data.mergeIntoId || data.submitId || "";
+  const fromIds = Array.isArray(data.mergeFromIds) ? data.mergeFromIds.map(String) : [];
+  if (!intoId || !fromIds.length) {
+    return jsonResponse_({ status: "error", message: "ข้อมูลรวมเคสไม่ครบ" });
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const sheet = getSheet_();
+    const intoRow = findRowBySubmitId_(sheet, intoId);
+    if (intoRow < 0) {
+      return jsonResponse_({ status: "error", message: "ไม่พบเคสหลัก" });
+    }
+
+    let upvoteTotal = Number(sheet.getRange(intoRow, COL.UPVOTE_COUNT).getValue()) || 0;
+    const voters = String(sheet.getRange(intoRow, COL.UPVOTED_LINE_IDS).getValue() || "")
+      .split(",")
+      .map(function (s) { return s.trim(); })
+      .filter(Boolean);
+
+    for (let i = 0; i < fromIds.length; i++) {
+      const fromId = fromIds[i];
+      if (!fromId || fromId === intoId) continue;
+      const fromRow = findRowBySubmitId_(sheet, fromId);
+      if (fromRow < 0) continue;
+      upvoteTotal += Number(sheet.getRange(fromRow, COL.UPVOTE_COUNT).getValue()) || 0;
+      String(sheet.getRange(fromRow, COL.UPVOTED_LINE_IDS).getValue() || "")
+        .split(",")
+        .map(function (s) { return s.trim(); })
+        .filter(Boolean)
+        .forEach(function (v) {
+          if (voters.indexOf(v) === -1) voters.push(v);
+        });
+      sheet.getRange(fromRow, COL.MERGED_TO_ID).setValue(intoId);
+      sheet.getRange(fromRow, COL.STATUS).setValue("ปิดเรื่อง");
+      sheet.getRange(fromRow, COL.STATUS_UPDATED).setValue(formatDateTimeTh_(timestamp));
+      sheet.getRange(fromRow, COL.ADMIN_NOTE).setValue("รวมเข้า " + intoId);
+    }
+
+    sheet.getRange(intoRow, COL.UPVOTE_COUNT).setValue(upvoteTotal);
+    sheet.getRange(intoRow, COL.UPVOTED_LINE_IDS).setValue(voters.join(","));
+    writeLog_(timestamp, 0, "adminMerge", 0, 0, 0, fromIds.join(","), "success", intoId);
+    const report = rowToReportObject_(getSingleRowRange_(sheet, intoRow, 1, SHEET_HEADERS.length).getValues()[0], intoRow);
+    return jsonResponse_({ status: "success", message: "รวมเคสเรียบร้อย", report: report });
+  } catch (err) {
+    return jsonResponse_({ status: "error", message: String(err && err.message ? err.message : err) });
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function handleAdminModerationHide_(data, timestamp) {
+  if (!verifyAdminToken_(data.adminToken)) {
+    return jsonResponse_({ status: "error", message: "กรุณาเข้าสู่ระบบใหม่" });
+  }
+  const submitId = data.submitId || "";
+  if (!submitId) {
+    return jsonResponse_({ status: "error", message: "ไม่พบ Submit ID" });
+  }
+  const sheet = getSheet_();
+  const row = findRowBySubmitId_(sheet, submitId);
+  if (row < 0) {
+    return jsonResponse_({ status: "error", message: "ไม่พบเรื่องนี้" });
+  }
+  const updatedAt = formatDateTimeTh_(timestamp);
+  sheet.getRange(row, COL.STATUS).setValue("REJECTED_MODERATION");
+  sheet.getRange(row, COL.IS_PUBLIC_SHOWCASE).setValue("FALSE");
+  sheet.getRange(row, COL.STATUS_UPDATED).setValue(updatedAt);
+  if (data.adminNote) {
+    sheet.getRange(row, COL.ADMIN_NOTE).setValue(data.adminNote);
+  }
+  appendStatusHistory_(sheet, row, "REJECTED_MODERATION", updatedAt, "moderation");
+  writeLog_(timestamp, 0, "moderationHide", 0, 0, 0, "hidden", "success", submitId);
+  return jsonResponse_({ status: "success", message: "ซ่อนรายการแล้ว" });
+}
+
+function handleGetZoneActiveIssues_(data) {
+  const building = String(data.building || "").trim();
+  const zone = String(data.zone || "").trim();
+  if (!building || !zone) {
+    return jsonResponse_({ status: "success", reports: [] });
+  }
+
+  const sheet = getSheet_();
+  const rows = getAllReportRows_(sheet);
+  const closed = { "เสร็จสิ้น": 1, "ปิดเรื่อง": 1, "REJECTED_MODERATION": 1 };
+  const reports = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const report = rowToReportObject_(rows[i], i + 2);
+    if (report.mergedToId) continue;
+    if (closed[report.status]) continue;
+    if (String(report.building) !== building || String(report.zone) !== zone) continue;
+    if (String(report.category).indexOf("ตามหาของหาย") === 0) continue;
+    reports.push(toPublicReport_(report));
+  }
+
+  reports.sort(function (a, b) {
+    return (Number(b.upvoteCount) || 0) - (Number(a.upvoteCount) || 0);
+  });
+
+  return jsonResponse_({ status: "success", reports: reports.slice(0, 20) });
+}
+
+function handleUpvoteTicket_(data) {
+  const submitId = data.submitId || "";
+  const lineId = data.lineId || "";
+  if (!submitId || !lineId) {
+    return jsonResponse_({ status: "error", message: "ข้อมูลไม่ครบ" });
+  }
+  if (!checkLineRateLimit_(lineId, "upvote", 20, 600)) {
+    return jsonResponse_({ status: "error", message: "กดบ่อยเกินไป", code: "RATE_LIMIT" });
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+    const sheet = getSheet_();
+    const row = findRowBySubmitId_(sheet, submitId);
+    if (row < 0) {
+      return jsonResponse_({ status: "error", message: "ไม่พบเรื่องนี้" });
+    }
+
+    const mergedTo = String(sheet.getRange(row, COL.MERGED_TO_ID).getValue() || "").trim();
+    const targetRow = mergedTo ? findRowBySubmitId_(sheet, mergedTo) : row;
+    if (targetRow < 0) {
+      return jsonResponse_({ status: "error", message: "ไม่พบเคสหลัก" });
+    }
+
+    const votersRaw = String(sheet.getRange(targetRow, COL.UPVOTED_LINE_IDS).getValue() || "");
+    const voters = votersRaw.split(",").map(function (s) { return s.trim(); }).filter(Boolean);
+    if (voters.indexOf(String(lineId)) !== -1) {
+      const count = Number(sheet.getRange(targetRow, COL.UPVOTE_COUNT).getValue()) || voters.length;
+      return jsonResponse_({ status: "success", message: "โหวตไปแล้ว", upvoteCount: count, already: true });
+    }
+
+    voters.push(String(lineId));
+    sheet.getRange(targetRow, COL.UPVOTED_LINE_IDS).setValue(voters.join(","));
+    sheet.getRange(targetRow, COL.UPVOTE_COUNT).setValue(voters.length);
+    writeLog_(new Date(), 0, "upvote", 0, 0, 0, "", "success", submitId);
+    return jsonResponse_({ status: "success", message: "อัปโหวตแล้ว", upvoteCount: voters.length });
+  } catch (err) {
+    return jsonResponse_({ status: "error", message: String(err && err.message ? err.message : err) });
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function handleTrackPublicDetail_(data) {
+  const submitId = data.submitId || "";
+  const trackToken = data.trackToken || data.t || "";
+  if (!submitId || !trackToken) {
+    return jsonResponse_({ status: "error", message: "ข้อมูลไม่ครบ" });
+  }
+
+  const sheet = getSheet_();
+  const row = findRowBySubmitId_(sheet, submitId);
+  if (row < 0) {
+    return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" });
+  }
+
+  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
+  if (String(report.trackToken) !== String(trackToken)) {
+    return jsonResponse_({ status: "error", message: "ลิงก์ไม่ถูกต้อง" });
+  }
+
+  return jsonResponse_({ status: "success", report: toTrackReport_(report) });
+}
+
+function handleGetPublicLostFound_(data) {
+  const lfType = String(data.lfType || "").trim();
+  const building = String(data.building || "").trim();
+  const sheet = getSheet_();
+  const rows = getAllReportRows_(sheet);
+  const reports = [];
+
+  for (let i = 0; i < rows.length; i++) {
+    const report = rowToReportObject_(rows[i], i + 2);
+    if (report.mergedToId) continue;
+    if (report.status === "REJECTED_MODERATION") continue;
+    if (String(report.isPublicShowcase).toUpperCase() !== "TRUE" && report.isPublicShowcase !== true) continue;
+    const cat = String(report.category || "");
+    const isLf = !!report.lfType || cat.indexOf("ตามหาของหาย") === 0 || cat.indexOf("พบของ") === 0;
+    if (!isLf) continue;
+    if (lfType && String(report.lfType) !== lfType && cat.indexOf(lfType) === -1) continue;
+    if (building && String(report.building) !== building) continue;
+    reports.push(toPublicLostFound_(report));
+  }
+
+  reports.sort(compareReportsNewestFirst_);
+  return jsonResponse_({ status: "success", reports: reports.slice(0, 100) });
 }
 
 function verifyAdminToken_(token) {
@@ -479,7 +823,15 @@ function verifyAdminToken_(token) {
 
 // ---------- LINE Messaging API ----------
 
-function buildSubmitConfirmationMessage_(submitId, category, status) {
+function buildTrackUrl_(submitId, trackToken) {
+  if (!submitId) return LIFF_TRACK_URL;
+  if (trackToken) {
+    return PUBLIC_TRACK_BASE + "/" + encodeURIComponent(submitId) + "?t=" + encodeURIComponent(trackToken);
+  }
+  return LIFF_TRACK_URL + "?id=" + encodeURIComponent(submitId);
+}
+
+function buildSubmitConfirmationMessage_(submitId, category, status, trackToken) {
   const resolvedStatus = status || DEFAULT_STATUS;
   let statusLine = resolvedStatus;
   if (resolvedStatus === DEFAULT_STATUS) {
@@ -494,32 +846,23 @@ function buildSubmitConfirmationMessage_(submitId, category, status) {
     "• หมวดหมู่: " + (category || "ไม่ได้เลือก"),
     "• สถานะปัจจุบัน: " + statusLine,
     "",
-    "🔍 ติดตามสถานะหรือเช็กความคืบหน้าได้ที่:",
-    "👉 " + LIFF_TRACK_URL,
-    "📝 แจ้งปัญหา / ตามหาของหายเพิ่มเติมได้ที่:",
+    "🔍 ติดตามสถานะได้ที่:",
+    "👉 " + buildTrackUrl_(submitId, trackToken),
+    "📝 แจ้งปัญหาเพิ่มเติมได้ที่:",
     "👉 " + LIFF_REPORT_URL
   ].join("\n");
 }
 
-function sendLineThankYou_(userId, submitId, category, status) {
-  if (!userId || userId === "ไม่ระบุ ID" || String(userId).indexOf("TEST") !== -1) return;
+function sendLinePushText_(to, text, submitId) {
+  if (!to || to === "ไม่ระบุ ID" || String(to).indexOf("TEST") !== -1) return;
   if (!LINE_ACCESS_TOKEN || LINE_ACCESS_TOKEN === "YOUR_LINE_CHANNEL_ACCESS_TOKEN") {
     Logger.log("LINE_ACCESS_TOKEN not configured, skip push message");
     return;
   }
 
-  if (submitId) {
-    const cache = CacheService.getScriptCache();
-    const cacheKey = "line_sent_" + submitId;
-    if (cache.get(cacheKey) === "1") return;
-    cache.put(cacheKey, "1", 60);
-  }
-
-  const messageText = buildSubmitConfirmationMessage_(submitId, category, status);
-
   const payload = {
-    to: userId,
-    messages: [{ type: "text", text: messageText }]
+    to: to,
+    messages: [{ type: "text", text: text }]
   };
 
   const options = {
@@ -533,7 +876,6 @@ function sendLineThankYou_(userId, submitId, category, status) {
   try {
     const response = UrlFetchApp.fetch("https://api.line.me/v2/bot/message/push", options);
     const code = response.getResponseCode();
-
     if (code !== 200) {
       const errText = response.getContentText();
       Logger.log("LINE Push failed (" + code + "): " + errText);
@@ -548,6 +890,64 @@ function sendLineThankYou_(userId, submitId, category, status) {
       writeDebugLog_(submitId, "LINE push: " + errText);
     }
   }
+}
+
+function sendLineThankYou_(userId, submitId, category, status, trackToken) {
+  if (submitId) {
+    const cache = CacheService.getScriptCache();
+    const cacheKey = "line_sent_" + submitId;
+    if (cache.get(cacheKey) === "1") return;
+    cache.put(cacheKey, "1", 60);
+  }
+  sendLinePushText_(userId, buildSubmitConfirmationMessage_(submitId, category, status, trackToken), submitId);
+}
+
+function sendLineStatusUpdate_(userId, submitId, status, adminNote, trackToken) {
+  const lines = [
+    "📢 อัปเดตสถานะเรื่องของคุณ",
+    "• รหัสติดตาม: " + (submitId || "—"),
+    "• สถานะใหม่: " + (status || "—")
+  ];
+  if (adminNote) {
+    lines.push("• หมายเหตุ: " + adminNote);
+  }
+  lines.push("");
+  lines.push("🔍 ดูรายละเอียด/รูป Before-After:");
+  lines.push("👉 " + buildTrackUrl_(submitId, trackToken));
+  sendLinePushText_(userId, lines.join("\n"), submitId);
+}
+
+function resolveAssignedGroup_(category) {
+  const cat = String(category || "");
+  if (cat.indexOf("ตามหาของหาย") === 0 || cat.indexOf("พบของ") === 0) return "LOST_FOUND";
+  if (cat.indexOf("เสนอความคิดเห็น") === 0) return "COUNCIL";
+  if (cat.indexOf("ปัญหา") === 0) return "FACILITY";
+  return "GENERAL";
+}
+
+function getGroupIdForKey_(key) {
+  const props = PropertiesService.getScriptProperties();
+  const map = {
+    LOST_FOUND: props.getProperty("GROUP_ID_LOST_FOUND") || props.getProperty("GROUP_ID_LF") || "",
+    COUNCIL: props.getProperty("GROUP_ID_COUNCIL") || "",
+    FACILITY: props.getProperty("GROUP_ID_FACILITY") || "",
+    GENERAL: props.getProperty("GROUP_ID_GENERAL") || ""
+  };
+  return map[key] || props.getProperty("GROUP_ID_GENERAL") || "";
+}
+
+function notifyAssignedGroup_(assignedGroup, submitId, category, building, zone, detail) {
+  const groupId = getGroupIdForKey_(assignedGroup);
+  if (!groupId) return;
+  const text = [
+    "🆕 เรื่องใหม่เข้าคิว (" + (assignedGroup || "GENERAL") + ")",
+    "• รหัส: " + submitId,
+    "• ประเภท: " + category,
+    "• สถานที่: " + [building, zone].filter(Boolean).join(" / "),
+    "• รายละเอียด: " + String(detail || "").substring(0, 120),
+    "• Admin: " + (PUBLIC_TRACK_BASE.replace("/track", "/nimda"))
+  ].join("\n");
+  sendLinePushText_(groupId, text, submitId);
 }
 
 /** รันครั้งเดียวจาก Apps Script Editor เพื่อขอสิทธิ์ UrlFetchApp แล้ว Deploy New version */
@@ -893,7 +1293,28 @@ function buildReportRow_(data) {
     data.debug || "",
     data.status || DEFAULT_STATUS,
     data.adminNote || "",
-    data.statusUpdated || formatDateTimeTh_(ts)
+    data.statusUpdated || formatDateTimeTh_(ts),
+    data.isAnonymous || "",
+    data.contactOptional || "",
+    data.building || "",
+    data.zone || "",
+    data.locationNote || "",
+    data.gpsLat || "",
+    data.gpsLng || "",
+    data.lfType || "",
+    data.lfWhen || "",
+    data.lfReturnPoint || "",
+    data.lfSecretDetail || "",
+    data.isPublicShowcase || "",
+    data.trackToken || "",
+    data.upvoteCount || 0,
+    data.upvotedLineIds || "",
+    data.mergedToId || "",
+    data.assignedGroup || "",
+    data.afterImageCount || 0,
+    data.afterImageUrl || "",
+    data.statusHistory || "",
+    data.imageStorage || ""
   ];
 }
 
@@ -1077,14 +1498,17 @@ function rowToReportObject_(row, sheetRow) {
     return val === undefined || val === null ? "" : val;
   };
 
+  const isAnonymousRaw = formatSheetCell_(get(COL.IS_ANONYMOUS), "text");
+  const isAnonymous = String(isAnonymousRaw).toUpperCase() === "TRUE" || isAnonymousRaw === true;
+
   return {
     submitId: formatSheetCell_(get(COL.SUBMIT_ID), "text"),
     date: formatSheetCell_(get(COL.DATE), "date"),
     time: formatSheetCell_(get(COL.TIME), "time"),
     lineId: formatSheetCell_(get(COL.LINE_ID), "text"),
-    name: formatSheetCell_(get(COL.NAME), "text"),
-    room: formatSheetCell_(get(COL.ROOM), "room"),
-    studentNo: formatSheetCell_(get(COL.STUDENT_NO), "text"),
+    name: isAnonymous ? "ไม่ประสงค์ออกนาม" : formatSheetCell_(get(COL.NAME), "text"),
+    room: isAnonymous ? "" : formatSheetCell_(get(COL.ROOM), "room"),
+    studentNo: isAnonymous ? "" : formatSheetCell_(get(COL.STUDENT_NO), "text"),
     category: formatSheetCell_(get(COL.CATEGORY), "text"),
     detail: formatSheetCell_(get(COL.DETAIL), "text"),
     imageCount: Number(get(COL.IMAGE_COUNT)) || 0,
@@ -1092,9 +1516,144 @@ function rowToReportObject_(row, sheetRow) {
     status: formatSheetCell_(get(COL.STATUS) || DEFAULT_STATUS, "text"),
     adminNote: formatSheetCell_(get(COL.ADMIN_NOTE), "text"),
     statusUpdated: formatSheetCell_(get(COL.STATUS_UPDATED), "datetime"),
+    isAnonymous: isAnonymous,
+    contactOptional: formatSheetCell_(get(COL.CONTACT_OPTIONAL), "text"),
+    building: formatSheetCell_(get(COL.BUILDING), "text"),
+    zone: formatSheetCell_(get(COL.ZONE), "text"),
+    locationNote: formatSheetCell_(get(COL.LOCATION_NOTE), "text"),
+    gpsLat: formatSheetCell_(get(COL.GPS_LAT), "text"),
+    gpsLng: formatSheetCell_(get(COL.GPS_LNG), "text"),
+    lfType: formatSheetCell_(get(COL.LF_TYPE), "text"),
+    lfWhen: formatSheetCell_(get(COL.LF_WHEN), "text"),
+    lfReturnPoint: formatSheetCell_(get(COL.LF_RETURN_POINT), "text"),
+    lfSecretDetail: formatSheetCell_(get(COL.LF_SECRET_DETAIL), "text"),
+    isPublicShowcase: String(formatSheetCell_(get(COL.IS_PUBLIC_SHOWCASE), "text")).toUpperCase() === "TRUE",
+    trackToken: formatSheetCell_(get(COL.TRACK_TOKEN), "text"),
+    upvoteCount: Number(get(COL.UPVOTE_COUNT)) || 0,
+    upvotedLineIds: formatSheetCell_(get(COL.UPVOTED_LINE_IDS), "text"),
+    mergedToId: formatSheetCell_(get(COL.MERGED_TO_ID), "text"),
+    assignedGroup: formatSheetCell_(get(COL.ASSIGNED_GROUP), "text"),
+    afterImageCount: Number(get(COL.AFTER_IMAGE_COUNT)) || 0,
+    afterImageUrl: formatSheetCell_(get(COL.AFTER_IMAGE_URL), "text"),
+    statusHistory: formatSheetCell_(get(COL.STATUS_HISTORY), "text"),
+    imageStorage: formatSheetCell_(get(COL.IMAGE_STORAGE), "text"),
     sheetRow: sheetRow || 0,
     sortTime: getRowSortTime_(row)
   };
+}
+
+function toPublicReport_(report) {
+  return {
+    submitId: report.submitId,
+    category: report.category,
+    detail: String(report.detail || "").substring(0, 160),
+    status: report.status,
+    building: report.building,
+    zone: report.zone,
+    upvoteCount: report.upvoteCount || 0,
+    date: report.date,
+    time: report.time
+  };
+}
+
+function toPublicLostFound_(report) {
+  return {
+    submitId: report.submitId,
+    category: report.category,
+    detail: String(report.detail || "").substring(0, 200),
+    status: report.status,
+    building: report.building,
+    zone: report.zone,
+    lfType: report.lfType,
+    lfWhen: report.lfWhen,
+    lfReturnPoint: report.lfReturnPoint,
+    imageUrl: report.imageUrl,
+    date: report.date,
+    time: report.time,
+    name: report.isAnonymous ? "ไม่ประสงค์ออกนาม" : "ผู้แจ้ง",
+    sortTime: report.sortTime,
+    sheetRow: report.sheetRow
+  };
+}
+
+function toTrackReport_(report) {
+  let history = [];
+  try {
+    history = report.statusHistory ? JSON.parse(report.statusHistory) : [];
+  } catch (e) {
+    history = [];
+  }
+  return {
+    submitId: report.submitId,
+    category: report.category,
+    detail: report.detail,
+    status: report.status,
+    adminNote: report.adminNote,
+    statusUpdated: report.statusUpdated,
+    building: report.building,
+    zone: report.zone,
+    locationNote: report.locationNote,
+    imageUrl: report.imageUrl,
+    afterImageUrl: report.afterImageUrl,
+    lfType: report.lfType,
+    lfWhen: report.lfWhen,
+    lfReturnPoint: report.lfReturnPoint,
+    upvoteCount: report.upvoteCount || 0,
+    date: report.date,
+    time: report.time,
+    name: report.isAnonymous ? "ไม่ประสงค์ออกนาม" : report.name,
+    statusHistory: history,
+    isAnonymous: !!report.isAnonymous
+  };
+}
+
+function normalizeImageUrls_(data) {
+  if (Array.isArray(data.imageUrls)) {
+    return data.imageUrls.map(String).filter(function (u) {
+      return u && (u.indexOf("http") === 0 || u.indexOf("blob:") === 0);
+    });
+  }
+  if (data.imageUrl && String(data.imageUrl).indexOf("http") === 0) {
+    return String(data.imageUrl).split("\n").filter(Boolean);
+  }
+  return [];
+}
+
+function checkLineRateLimit_(lineId, action, maxCount, windowSec) {
+  if (!lineId || String(lineId).indexOf("TEST") !== -1) return true;
+  const cache = CacheService.getScriptCache();
+  const key = "rl_" + action + "_" + String(lineId);
+  const raw = cache.get(key);
+  const count = raw ? Number(raw) : 0;
+  if (count >= maxCount) return false;
+  cache.put(key, String(count + 1), windowSec || 600);
+  return true;
+}
+
+function containsProfanity_(text) {
+  const t = String(text || "").toLowerCase();
+  if (!t) return false;
+  const banned = [
+    "เหี้ย", "ควย", "เย็ด", "สัส", " fucking", "shit", "bitch", "ห่า", "หน้าหี", "ไอ้สัตว์"
+  ];
+  for (let i = 0; i < banned.length; i++) {
+    if (banned[i] && t.indexOf(banned[i].trim()) !== -1) return true;
+  }
+  return false;
+}
+
+function appendStatusHistory_(sheet, row, status, at, by) {
+  let history = [];
+  try {
+    const raw = sheet.getRange(row, COL.STATUS_HISTORY).getValue();
+    if (raw) history = JSON.parse(String(raw));
+  } catch (e) {
+    history = [];
+  }
+  if (!Array.isArray(history)) history = [];
+  history.push({ status: status, at: at, by: by || "admin" });
+  if (history.length > 30) history = history.slice(history.length - 30);
+  sheet.getRange(row, COL.STATUS_HISTORY).setValue(JSON.stringify(history));
 }
 
 function getRowSortTime_(row) {

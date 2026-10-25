@@ -1,0 +1,728 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import imageCompression from "browser-image-compression";
+import {
+  CATEGORIES,
+  LF_RETURN_POINTS,
+  SCHOOL_ZONES
+} from "@/constants/schoolZones";
+import { clearDraft, FormDraft, loadDraft, useFormDraft } from "@/hooks/useFormDraft";
+import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
+import { TurnstileWidget } from "@/components/Turnstile";
+
+declare global {
+  interface Window {
+    liff?: {
+      init: (opts: { liffId: string }) => Promise<void>;
+      isLoggedIn: () => boolean;
+      login: () => void;
+      getProfile: () => Promise<{ userId: string; displayName: string }>;
+      getIDToken: () => string | null;
+      isInClient?: () => boolean;
+      closeWindow?: () => void;
+    };
+  }
+}
+
+type UploadedImage = {
+  id: string;
+  preview: string;
+  url?: string;
+  status: "pending" | "uploading" | "done" | "error";
+  error?: string;
+  file?: File;
+};
+
+type ZoneIssue = {
+  submitId: string;
+  category: string;
+  detail: string;
+  status: string;
+  upvoteCount?: number;
+};
+
+function generateSubmitId() {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  let code = "";
+  for (let i = 0; i < 8; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+  return "UDF-" + code;
+}
+
+async function sleep(ms: number) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+export function ReportForm() {
+  const online = useOnlineStatus();
+  const [step, setStep] = useState(1);
+  const [category, setCategory] = useState("");
+  const [otherCategory, setOtherCategory] = useState("");
+  const [detail, setDetail] = useState("");
+  const [building, setBuilding] = useState("");
+  const [zone, setZone] = useState("");
+  const [locationNote, setLocationNote] = useState("");
+  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [room, setRoom] = useState("");
+  const [studentNo, setStudentNo] = useState("");
+  const [contactOptional, setContactOptional] = useState("");
+  const [lfType, setLfType] = useState("");
+  const [lfWhen, setLfWhen] = useState("");
+  const [lfReturnPoint, setLfReturnPoint] = useState("");
+  const [lfSecretDetail, setLfSecretDetail] = useState("");
+  const [isPublicShowcase, setIsPublicShowcase] = useState(true);
+  const [gpsLat, setGpsLat] = useState("");
+  const [gpsLng, setGpsLng] = useState("");
+  const [name, setName] = useState("");
+  const [lineId, setLineId] = useState("");
+  const [images, setImages] = useState<UploadedImage[]>([]);
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const [zoneIssues, setZoneIssues] = useState<ZoneIssue[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState("");
+  const [successId, setSuccessId] = useState("");
+  const [trackUrl, setTrackUrl] = useState("");
+  const [toast, setToast] = useState("");
+  const [error, setError] = useState("");
+  const [hasDraftBanner, setHasDraftBanner] = useState(false);
+
+  const zones = useMemo(
+    () => SCHOOL_ZONES.find((z) => z.building === building)?.zones || [],
+    [building]
+  );
+
+  const draft: FormDraft = {
+    step,
+    category,
+    otherCategory,
+    detail,
+    building,
+    zone,
+    locationNote,
+    isAnonymous,
+    room,
+    studentNo,
+    contactOptional,
+    lfType,
+    lfWhen,
+    lfReturnPoint,
+    lfSecretDetail,
+    isPublicShowcase,
+    gpsLat,
+    gpsLng
+  };
+  useFormDraft(draft, !successId);
+
+  useEffect(() => {
+    const saved = loadDraft();
+    if (saved) {
+      setStep(saved.step || 1);
+      setCategory(saved.category || "");
+      setOtherCategory(saved.otherCategory || "");
+      setDetail(saved.detail || "");
+      setBuilding(saved.building || "");
+      setZone(saved.zone || "");
+      setLocationNote(saved.locationNote || "");
+      setIsAnonymous(!!saved.isAnonymous);
+      setRoom(saved.room || "");
+      setStudentNo(saved.studentNo || "");
+      setContactOptional(saved.contactOptional || "");
+      setLfType(saved.lfType || "");
+      setLfWhen(saved.lfWhen || "");
+      setLfReturnPoint(saved.lfReturnPoint || "");
+      setLfSecretDetail(saved.lfSecretDetail || "");
+      setIsPublicShowcase(saved.isPublicShowcase !== false);
+      setGpsLat(saved.gpsLat || "");
+      setGpsLng(saved.gpsLng || "");
+      setHasDraftBanner(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    async function initLiff() {
+      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_REPORT || "";
+      try {
+        if (!window.liff || !liffId) {
+          setName("ผู้ใช้งานจำลอง");
+          setLineId("U-TEST-USER-ID");
+          return;
+        }
+        await window.liff.init({ liffId });
+        if (!window.liff.isLoggedIn()) {
+          window.liff.login();
+          return;
+        }
+        const profile = await window.liff.getProfile();
+        setName(profile.displayName);
+        setLineId(profile.userId);
+      } catch {
+        setName("ผู้ใช้งานจำลอง");
+        setLineId("U-TEST-USER-ID");
+      }
+    }
+    initLiff();
+  }, []);
+
+  useEffect(() => {
+    if (!building || !zone || category === "ตามหาของหาย") {
+      setZoneIssues([]);
+      return;
+    }
+    const ctrl = new AbortController();
+    fetch(`/api/zone-issues?building=${encodeURIComponent(building)}&zone=${encodeURIComponent(zone)}`, {
+      signal: ctrl.signal
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.status === "success") setZoneIssues(data.reports || []);
+      })
+      .catch(() => {});
+    return () => ctrl.abort();
+  }, [building, zone, category]);
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 2200);
+  };
+
+  const uploadOne = useCallback(async (item: UploadedImage, attempt = 1): Promise<UploadedImage> => {
+    if (!item.file) return { ...item, status: "error", error: "ไม่มีไฟล์" };
+    setImages((prev) =>
+      prev.map((img) => (img.id === item.id ? { ...img, status: "uploading", error: undefined } : img))
+    );
+    try {
+      if (!isSupabaseConfigured()) {
+        // Dev fallback: object URL only (not persisted)
+        const fake = item.preview;
+        return { ...item, url: fake, status: "done" };
+      }
+      const url = await uploadTicketImage(item.file, "tickets");
+      return { ...item, url, status: "done" };
+    } catch (err) {
+      if (attempt < 3) {
+        await sleep(500 * Math.pow(2, attempt - 1));
+        return uploadOne(item, attempt + 1);
+      }
+      return {
+        ...item,
+        status: "error",
+        error: err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ"
+      };
+    }
+  }, []);
+
+  async function onPickFiles(fileList: FileList | null) {
+    if (!fileList?.length) return;
+    const files = Array.from(fileList).slice(0, 5 - images.length);
+    for (const file of files) {
+      const compressed = await imageCompression(file, {
+        maxSizeMB: 0.5,
+        maxWidthOrHeight: 1280,
+        useWebWorker: true,
+        fileType: "image/jpeg",
+        initialQuality: 0.75
+      });
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const preview = URL.createObjectURL(compressed);
+      const item: UploadedImage = {
+        id,
+        preview,
+        file: compressed,
+        status: "pending"
+      };
+      setImages((prev) => [...prev, item]);
+      const result = await uploadOne(item);
+      setImages((prev) => prev.map((img) => (img.id === id ? result : img)));
+    }
+  }
+
+  async function refreshIdToken() {
+    if (!window.liff) {
+      return lineId ? `dev:${lineId}` : "dev:U-TEST-USER-ID";
+    }
+    let token = window.liff.getIDToken();
+    if (!token) {
+      if (!window.liff.isLoggedIn()) window.liff.login();
+      token = window.liff.getIDToken();
+    }
+    if (!token && lineId) return `dev:${lineId}`;
+    if (!token) throw new Error("ไม่สามารถขอ LIFF ID Token ได้ กรุณาเปิดใหม่จาก LINE");
+    return token;
+  }
+
+  async function upvote(submitId: string) {
+    try {
+      const idToken = await refreshIdToken();
+      const res = await fetch("/api/upvote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ submitId, idToken })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "อัปโหวตไม่สำเร็จ");
+      showToast("บันทึก +1 เรียบร้อย");
+      setZoneIssues((prev) =>
+        prev.map((r) =>
+          r.submitId === submitId
+            ? { ...r, upvoteCount: (r.upvoteCount || 0) + 1 }
+            : r
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "อัปโหวตไม่สำเร็จ");
+    }
+  }
+
+  function useGps() {
+    if (!navigator.geolocation) {
+      setError("อุปกรณ์ไม่รองรับ GPS");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setGpsLat(String(pos.coords.latitude));
+        setGpsLng(String(pos.coords.longitude));
+        showToast("บันทึกพิกัดเสริมแล้ว");
+      },
+      () => setError("ไม่สามารถอ่านตำแหน่งได้")
+    );
+  }
+
+  async function submitForm() {
+    setError("");
+    if (!category) {
+      setError("กรุณาเลือกประเภทเรื่อง");
+      setStep(1);
+      return;
+    }
+    if (category === "อื่นๆ" && !otherCategory.trim()) {
+      setError("กรุณาระบุหัวข้ออื่นๆ");
+      return;
+    }
+    if (!detail.trim()) {
+      setError("กรุณากรอกรายละเอียด");
+      setStep(2);
+      return;
+    }
+    if (!building || !zone) {
+      setError("กรุณาเลือกอาคารและจุดสังเกต");
+      setStep(2);
+      return;
+    }
+    if (category === "ตามหาของหาย" && (!lfType || !lfWhen || !lfReturnPoint)) {
+      setError("กรุณากรอกข้อมูลของหายให้ครบ");
+      setStep(2);
+      return;
+    }
+    if (!isAnonymous && (!room.trim() || !studentNo.trim())) {
+      setError("กรุณากรอกห้องและเลขที่ หรือเลือกไม่ระบุตัวตน");
+      setStep(3);
+      return;
+    }
+    if (images.some((img) => img.status === "uploading")) {
+      setError("กำลังอัปโหลดรูป กรุณารอสักครู่");
+      return;
+    }
+    if (images.some((img) => img.status === "error")) {
+      setError("มีรูปอัปโหลดไม่สำเร็จ — กด Retry ก่อนส่ง");
+      return;
+    }
+    if (!turnstileToken) {
+      setError("กรุณายืนยัน Turnstile");
+      return;
+    }
+
+    setLoading(true);
+    setLoadingMsg("กำลังส่งเรื่อง...");
+    try {
+      const idToken = await refreshIdToken();
+      const submitId = generateSubmitId();
+      const imageUrls = images.map((img) => img.url).filter(Boolean) as string[];
+
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...draft,
+          name,
+          lineId,
+          submitId,
+          imageUrls,
+          turnstileToken,
+          idToken
+        })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "ส่งไม่สำเร็จ");
+
+      clearDraft();
+      setSuccessId(submitId);
+      setTrackUrl(data.trackUrl || `/track/${submitId}?t=${data.trackToken || ""}`);
+      if (window.liff?.isInClient?.()) {
+        setTimeout(() => window.liff?.closeWindow?.(), 6000);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "ส่งไม่สำเร็จ");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (successId) {
+    return (
+      <div className="min-h-dvh flex items-center justify-center px-4 pb-safe">
+        <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
+          <div className="text-4xl text-blue-800 mb-3">✓</div>
+          <h2 className="text-xl font-bold text-blue-900">ขอบคุณที่แจ้งปัญหา</h2>
+          <p className="text-sm text-gray-500 mt-2">เราได้รับข้อมูลของคุณแล้ว</p>
+          <div className="mt-4 bg-blue-50 rounded-xl p-4 text-left">
+            <p className="text-xs text-blue-800 font-semibold mb-1">เลขที่แจ้ง</p>
+            <p className="font-mono text-sm break-all">{successId}</p>
+            <button
+              type="button"
+              className="mt-3 w-full py-2 rounded-lg border border-blue-800 text-blue-800 text-sm"
+              onClick={async () => {
+                await navigator.clipboard.writeText(successId);
+                showToast("คัดลอกเลขที่แจ้งแล้ว");
+              }}
+            >
+              คัดลอกรหัส
+            </button>
+            {trackUrl && (
+              <a
+                href={trackUrl}
+                className="mt-2 block w-full py-2 rounded-lg bg-blue-800 text-white text-sm text-center"
+              >
+                ติดตามสถานะ
+              </a>
+            )}
+          </div>
+        </div>
+        {toast && (
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full">
+            {toast}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-dvh flex flex-col pb-safe">
+      {!online && (
+        <div className="bg-amber-500 text-white text-center text-sm py-2">
+          ออฟไลน์ / สัญญาณเน็ตอ่อน — ข้อมูลร่างยังถูกบันทึกไว้
+        </div>
+      )}
+      {hasDraftBanner && (
+        <div className="bg-blue-50 text-blue-900 text-sm px-4 py-2 flex justify-between gap-2">
+          <span>กู้คืนร่างที่ค้างไว้แล้ว (รูปต้องเลือกใหม่)</span>
+          <button
+            type="button"
+            className="underline"
+            onClick={() => {
+              clearDraft();
+              setHasDraftBanner(false);
+            }}
+          >
+            ล้างร่าง
+          </button>
+        </div>
+      )}
+
+      <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
+        <h1 className="text-2xl font-bold">UDFondue</h1>
+        <p className="text-sm text-blue-100 mt-1">ระบบแจ้งเรื่องนักเรียน</p>
+        <div className="mt-4 flex justify-center gap-2 text-xs">
+          {[1, 2, 3].map((n) => (
+            <span
+              key={n}
+              className={`px-3 py-1 rounded-full ${step === n ? "bg-white text-blue-900" : "bg-white/20"}`}
+            >
+              Step {n}/3
+            </span>
+          ))}
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-5 space-y-4">
+        {error && (
+          <div className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
+        )}
+
+        {step === 1 && (
+          <section className="bg-white rounded-2xl p-4 space-y-3">
+            <h2 className="font-bold">เลือกประเภทเรื่อง</h2>
+            <div className="grid gap-2">
+              {CATEGORIES.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setCategory(c.value)}
+                  className={`text-left px-4 py-3 rounded-xl border-2 ${
+                    category === c.value ? "border-blue-800 bg-blue-50" : "border-gray-200"
+                  }`}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            {category === "อื่นๆ" && (
+              <input
+                className="w-full border rounded-xl px-3 py-2"
+                placeholder="ระบุหัวข้อเอง"
+                value={otherCategory}
+                onChange={(e) => setOtherCategory(e.target.value)}
+              />
+            )}
+            <button
+              type="button"
+              className="w-full bg-blue-800 text-white py-3 rounded-xl font-semibold"
+              onClick={() => setStep(2)}
+              disabled={!category}
+            >
+              ถัดไป
+            </button>
+          </section>
+        )}
+
+        {step === 2 && (
+          <section className="bg-white rounded-2xl p-4 space-y-3">
+            <h2 className="font-bold">รายละเอียดและสถานที่</h2>
+            <textarea
+              className="w-full border rounded-xl px-3 py-2 min-h-[100px]"
+              placeholder="อธิบายปัญหา / ของที่หาย..."
+              value={detail}
+              onChange={(e) => setDetail(e.target.value)}
+            />
+            <select
+              className="w-full border rounded-xl px-3 py-2"
+              value={building}
+              onChange={(e) => {
+                setBuilding(e.target.value);
+                setZone("");
+              }}
+            >
+              <option value="">เลือกอาคาร / พื้นที่</option>
+              {SCHOOL_ZONES.map((z) => (
+                <option key={z.building} value={z.building}>
+                  {z.building}
+                </option>
+              ))}
+            </select>
+            <select
+              className="w-full border rounded-xl px-3 py-2"
+              value={zone}
+              onChange={(e) => setZone(e.target.value)}
+              disabled={!building}
+            >
+              <option value="">เลือกชั้น / จุดสังเกต</option>
+              {zones.map((z) => (
+                <option key={z} value={z}>
+                  {z}
+                </option>
+              ))}
+            </select>
+            <input
+              className="w-full border rounded-xl px-3 py-2"
+              placeholder="จุดอ้างอิงเพิ่มเติม (ไม่บังคับ)"
+              value={locationNote}
+              onChange={(e) => setLocationNote(e.target.value)}
+            />
+            <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
+              ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
+            </button>
+            {(gpsLat || gpsLng) && (
+              <p className="text-xs text-gray-500">
+                GPS: {gpsLat}, {gpsLng}
+              </p>
+            )}
+
+            {zoneIssues.length > 0 && (
+              <div className="bg-amber-50 rounded-xl p-3 space-y-2">
+                <p className="text-sm font-semibold text-amber-900">มีเรื่องค้างในจุดนี้</p>
+                {zoneIssues.slice(0, 5).map((issue) => (
+                  <div key={issue.submitId} className="bg-white rounded-lg p-2 text-sm">
+                    <p className="font-medium">{issue.category}</p>
+                    <p className="text-gray-600 line-clamp-2">{issue.detail}</p>
+                    <button
+                      type="button"
+                      className="mt-2 text-blue-800 font-semibold"
+                      onClick={() => upvote(issue.submitId)}
+                    >
+                      เจอปัญหานี้เหมือนกัน (+1){issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {category === "ตามหาของหาย" && (
+              <div className="space-y-2 border-t pt-3">
+                <p className="font-semibold text-sm">ข้อมูลของหาย</p>
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={lfType}
+                  onChange={(e) => setLfType(e.target.value)}
+                >
+                  <option value="">ประเภท</option>
+                  <option value="แจ้งทำของหาย">แจ้งทำของหาย</option>
+                  <option value="แจ้งพบของหาย">แจ้งพบของหาย</option>
+                </select>
+                <input
+                  type="datetime-local"
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={lfWhen}
+                  onChange={(e) => setLfWhen(e.target.value)}
+                />
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={lfReturnPoint}
+                  onChange={(e) => setLfReturnPoint(e.target.value)}
+                >
+                  <option value="">จุดรับคืน</option>
+                  {LF_RETURN_POINTS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                {lfType === "แจ้งพบของหาย" && (
+                  <textarea
+                    className="w-full border rounded-xl px-3 py-2"
+                    placeholder="ข้อมูลลับยืนยันเจ้าของ (เช่น สีเคส/ของด้านใน) — ไม่แสดงสาธารณะ"
+                    value={lfSecretDetail}
+                    onChange={(e) => setLfSecretDetail(e.target.value)}
+                  />
+                )}
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={isPublicShowcase}
+                    onChange={(e) => setIsPublicShowcase(e.target.checked)}
+                  />
+                  แสดงบนกระดานของหายสาธารณะ
+                </label>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+              <button type="button" className="flex-1 border py-3 rounded-xl" onClick={() => setStep(1)}>
+                ย้อนกลับ
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-blue-800 text-white py-3 rounded-xl font-semibold"
+                onClick={() => setStep(3)}
+              >
+                ถัดไป
+              </button>
+            </div>
+          </section>
+        )}
+
+        {step === 3 && (
+          <section className="bg-white rounded-2xl p-4 space-y-3">
+            <h2 className="font-bold">ตัวตนและรูปภาพ</h2>
+            <label className="flex items-start gap-2 text-sm bg-gray-50 rounded-xl p-3">
+              <input
+                type="checkbox"
+                checked={isAnonymous}
+                onChange={(e) => setIsAnonymous(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                แจ้งแบบไม่ระบุตัวตน — ชื่อ/ห้อง/เลขที่จะไม่แสดงสาธารณะ แต่ยังรับแจ้งเตือนใน LINE ได้
+              </span>
+            </label>
+            {!isAnonymous && (
+              <>
+                <input className="w-full border rounded-xl px-3 py-2 bg-gray-50" value={name} readOnly />
+                <input
+                  className="w-full border rounded-xl px-3 py-2"
+                  placeholder="ห้อง เช่น 5/6"
+                  value={room}
+                  onChange={(e) => setRoom(e.target.value)}
+                />
+                <input
+                  className="w-full border rounded-xl px-3 py-2"
+                  placeholder="เลขที่"
+                  value={studentNo}
+                  onChange={(e) => setStudentNo(e.target.value)}
+                />
+                <input
+                  className="w-full border rounded-xl px-3 py-2"
+                  placeholder="ช่องทางติดต่อกลับ (ไม่บังคับ)"
+                  value={contactOptional}
+                  onChange={(e) => setContactOptional(e.target.value)}
+                />
+              </>
+            )}
+
+            <div>
+              <p className="text-sm font-semibold mb-1">แนบรูป (สูงสุด 5)</p>
+              <p className="text-xs text-gray-500 mb-2">
+                โปรดหลีกเลี่ยงการถ่ายติดใบหน้าของบุคคลอื่นโดยไม่ได้รับอนุญาต เพื่อรักษาความเป็นส่วนตัว
+              </p>
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                multiple
+                onChange={(e) => {
+                  onPickFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <div className="grid grid-cols-3 gap-2 mt-3">
+                {images.map((img) => (
+                  <div key={img.id} className="relative rounded-xl overflow-hidden border bg-gray-100">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={img.preview} alt="" className="w-full h-24 object-cover" />
+                    <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[10px] px-1 py-0.5">
+                      {img.status}
+                    </div>
+                    {img.status === "error" && (
+                      <button
+                        type="button"
+                        className="absolute inset-0 bg-red-900/40 text-white text-xs font-bold"
+                        onClick={async () => {
+                          const result = await uploadOne(img);
+                          setImages((prev) => prev.map((x) => (x.id === img.id ? result : x)));
+                        }}
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <TurnstileWidget onToken={setTurnstileToken} />
+
+            <div className="flex gap-2 pb-4">
+              <button type="button" className="flex-1 border py-3 rounded-xl" onClick={() => setStep(2)}>
+                ย้อนกลับ
+              </button>
+              <button
+                type="button"
+                className="flex-1 bg-blue-800 text-white py-3 rounded-xl font-semibold disabled:opacity-60"
+                disabled={loading}
+                onClick={submitForm}
+              >
+                {loading ? loadingMsg || "กำลังส่ง..." : "ส่งเรื่อง"}
+              </button>
+            </div>
+          </section>
+        )}
+      </main>
+
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full z-50">
+          {toast}
+        </div>
+      )}
+    </div>
+  );
+}
