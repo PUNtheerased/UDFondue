@@ -180,6 +180,9 @@ function doPost(e) {
     if (action === "mirrorSubmit") {
       return handleMirrorSubmit_(data, timestamp, payloadSize);
     }
+    if (action === "adminPurgeSheet") {
+      return handleAdminPurgeSheet_(data);
+    }
 
     return handleLegacy_(data, timestamp, payloadSize);
 
@@ -1045,26 +1048,35 @@ function buildTrackUrl_(submitId, trackToken) {
 
 function buildSubmitConfirmationMessage_(submitId, category, status, trackToken) {
   const resolvedStatus = status || DEFAULT_STATUS;
-  let statusLine = resolvedStatus;
-  if (resolvedStatus === DEFAULT_STATUS) {
-    statusLine = resolvedStatus + " (รอเจ้าหน้าที่ตรวจสอบ)";
-  }
-
+  const trackUrl = PUBLIC_TRACK_BASE + "/" + encodeURIComponent(submitId || "");
   return [
-    "รับเรื่องเรียบร้อยแล้ว",
-    "ระบบได้รับข้อมูลของท่านแล้ว เจ้าหน้าที่จะดำเนินการตามลำดับ",
+    "🙏 ขอบคุณสำหรับการแจ้งเรื่องครับ/ค่ะ!",
+    "ทางเราได้รับข้อมูลของท่านเรียบร้อยแล้ว",
+    "📌 สรุปรายละเอียดการแจ้งเรื่อง",
+    "• รหัสติดตาม: " + (submitId || "—"),
+    "• หมวดหมู่: " + (category || "ไม่ได้เลือก"),
+    "• สถานะปัจจุบัน: 🟡 " + resolvedStatus,
     "",
-    "สรุปการแจ้งเรื่อง",
-    "• เลขที่ติดตาม: " + (submitId || "—"),
-    "• ประเภท: " + (category || "ไม่ได้เลือก"),
-    "• สถานะ: " + statusLine,
-    "",
-    "ติดตามสถานะ:",
-    buildTrackUrl_(submitId, trackToken),
-    "",
-    "แจ้งเรื่องเพิ่มเติม:",
-    LIFF_REPORT_URL
+    "🔍 ติดตามสถานะหรือเช็กความคืบหน้าได้ที่:",
+    "👉 " + trackUrl
   ].join("\n");
+}
+
+/** Dev: ล้างแถวข้อมูลในชีตหลัก (เหลือหัวตาราง) */
+function handleAdminPurgeSheet_(data) {
+  if (!verifyAdminToken_(data.adminToken) && String(data.password || "") !== ADMIN_PASSWORD) {
+    return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์" });
+  }
+  if (String(data.confirm || "") !== "ล้างข้อมูลทั้งหมด") {
+    return jsonResponse_({ status: "error", message: "ยืนยันไม่ถูกต้อง" });
+  }
+  const sheet = getSheet_();
+  ensureSheetHeaders_(sheet, true);
+  const last = sheet.getLastRow();
+  if (last > 1) {
+    sheet.deleteRows(2, last - 1);
+  }
+  return jsonResponse_({ status: "success", message: "ล้างชีตแล้ว" });
 }
 
 function sendLinePushText_(to, text, submitId) {

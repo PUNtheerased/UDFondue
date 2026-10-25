@@ -4,7 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import {
   BUILDING_GROUPS,
   CATEGORIES,
-  FLOOR_OPTIONS,
+  floorsForBuilding,
+  isMainClassroomBuilding,
   LF_RETURN_POINTS
 } from "@/constants/schoolZones";
 import { clearDraft, FormDraft, loadDraft, useFormDraft } from "@/hooks/useFormDraft";
@@ -92,8 +93,12 @@ export function ReportForm() {
   const [error, setError] = useState("");
   const [pendingDraft, setPendingDraft] = useState<FormDraft | null>(null);
 
-  const roomPlaceholder =
-    zone === "อื่นๆ" ? "โปรดระบุ" : zone ? "เลขห้อง เช่น 421" : "เลือกชั้นก่อน";
+  const floorChoices = building ? floorsForBuilding(building) : [];
+  const roomPlaceholder = !zone
+    ? "เลือกชั้นก่อน"
+    : isMainClassroomBuilding(building) && zone !== "อื่นๆ"
+      ? "เลขห้อง เช่น 123"
+      : "โปรดระบุ";
 
   const draft: FormDraft = {
     step,
@@ -408,15 +413,25 @@ export function ReportForm() {
       setStep(2);
       return;
     }
-    if (zone === "อื่นๆ" && !locationNote.trim()) {
+    if (
+      (!isMainClassroomBuilding(building) || zone === "อื่นๆ") &&
+      !locationNote.trim()
+    ) {
       setError("พิมพ์จุดสังเกตในช่องโปรดระบุ");
       setStep(2);
       return;
     }
-    if (category === "ตามหาของหาย" && (!lfType || !lfWhen || !lfReturnPoint)) {
-      setError("กรอกข้อมูลของหายให้ครบก่อนนะ");
-      setStep(2);
-      return;
+    if (category === "ตามหาของหาย") {
+      if (!lfType || !lfWhen || !detail.trim()) {
+        setError("กรอกข้อมูลของหายให้ครบก่อนนะ");
+        setStep(2);
+        return;
+      }
+      if (lfType === "แจ้งพบของหาย" && !lfReturnPoint) {
+        setError("เลือกจุดรับคืนด้วยนะ");
+        setStep(2);
+        return;
+      }
     }
     if (!isAnonymous && (!room.trim() || !studentNo.trim())) {
       setError("ใส่ห้องกับเลขที่ หรือติ๊กไม่ระบุตัวตน");
@@ -682,9 +697,15 @@ export function ReportForm() {
               className="w-full border rounded-xl px-3 py-2"
               value={building}
               onChange={(e) => {
-                setBuilding(e.target.value);
-                setZone("");
+                const next = e.target.value;
+                setBuilding(next);
                 setLocationNote("");
+                // นอกอาคาร 1–5 ใช้ชั้นเป็น "อื่นๆ" ทันที
+                if (next && !isMainClassroomBuilding(next)) {
+                  setZone("อื่นๆ");
+                } else {
+                  setZone("");
+                }
               }}
             >
               <option value="">เลือกสถานที่</option>
@@ -709,8 +730,8 @@ export function ReportForm() {
                 }}
                 disabled={!building}
               >
-                <option value="">เลือกชั้น</option>
-                {FLOOR_OPTIONS.map((f) => (
+                <option value="">{isMainClassroomBuilding(building) ? "เลือกชั้น" : "จุด"}</option>
+                {floorChoices.map((f) => (
                   <option key={f} value={f}>
                     {f}
                   </option>
@@ -722,11 +743,13 @@ export function ReportForm() {
                 value={locationNote}
                 onChange={(e) => setLocationNote(e.target.value)}
                 disabled={!zone}
-                required={zone === "อื่นๆ"}
+                required={!isMainClassroomBuilding(building) || zone === "อื่นๆ"}
               />
             </div>
             <p className="text-xs text-gray-500">
-              เลือกชั้น แล้วพิมพ์ห้องหรือจุดสังเกตด้านขวา (เช่น หน้าห้อง 421)
+              {isMainClassroomBuilding(building)
+                ? "อาคาร 1–5 เลือกชั้น 1–4 แล้วพิมพ์เลขห้องด้านขวา"
+                : "นอกอาคาร 1–5 พิมพ์จุดสังเกตด้านขวา (โปรดระบุ)"}
             </p>
             <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
               ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
@@ -762,7 +785,11 @@ export function ReportForm() {
                 <select
                   className="w-full border rounded-xl px-3 py-2"
                   value={lfType}
-                  onChange={(e) => setLfType(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setLfType(next);
+                    if (next !== "แจ้งพบของหาย") setLfReturnPoint("");
+                  }}
                 >
                   <option value="">ประเภท</option>
                   <option value="แจ้งทำของหาย">แจ้งทำของหาย</option>
@@ -782,18 +809,20 @@ export function ReportForm() {
                   value={lfWhen}
                   onChange={(e) => setLfWhen(e.target.value)}
                 />
-                <select
-                  className="w-full border rounded-xl px-3 py-2"
-                  value={lfReturnPoint}
-                  onChange={(e) => setLfReturnPoint(e.target.value)}
-                >
-                  <option value="">จุดรับคืน</option>
-                  {LF_RETURN_POINTS.map((p) => (
-                    <option key={p} value={p}>
-                      {p}
-                    </option>
-                  ))}
-                </select>
+                {lfType === "แจ้งพบของหาย" && (
+                  <select
+                    className="w-full border rounded-xl px-3 py-2"
+                    value={lfReturnPoint}
+                    onChange={(e) => setLfReturnPoint(e.target.value)}
+                  >
+                    <option value="">จุดรับคืน</option>
+                    {LF_RETURN_POINTS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <label className="flex items-center gap-2 text-sm">
                   <input
                     type="checkbox"

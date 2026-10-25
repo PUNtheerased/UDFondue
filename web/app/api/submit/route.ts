@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         console.error("mirrorSubmit failed", mirrorErr);
       }
 
-      const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "";
+      const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "").replace(/\/$/, "");
       await notifyLine({
         kind: "submit",
         lineId: lineAuth.sub,
@@ -138,7 +138,7 @@ export async function POST(req: NextRequest) {
         building: body.building || "",
         zone: body.zone || "",
         detail,
-        trackUrl: `${siteUrl}/track/${encodeURIComponent(submitId)}?t=${trackToken}`
+        trackUrl: `${siteUrl}/track/${encodeURIComponent(submitId)}`
       });
 
       return NextResponse.json({

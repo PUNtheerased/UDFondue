@@ -44,30 +44,35 @@ export const BUILDING_GROUPS: BuildingGroup[] = [
   }
 ];
 
-/** ชั้น / จุดคร่าว ๆ — รายละเอียดห้องพิมพ์ช่องข้าง ๆ */
-export const FLOOR_OPTIONS = [
-  "ชั้น 1",
-  "ชั้น 2",
-  "ชั้น 3",
-  "ชั้น 4",
-  "ชั้น 5",
-  "พื้นล่าง / โถง",
-  "อื่นๆ"
-];
+/** อาคารเรียนหลัก 1–5 มี 4 ชั้น */
+export const MAIN_BUILDING_FLOORS = ["ชั้น 1", "ชั้น 2", "ชั้น 3", "ชั้น 4"];
+
+export const OTHER_PLACE_FLOOR = "อื่นๆ";
 
 export const SCHOOL_BUILDINGS = BUILDING_GROUPS.flatMap((g) => g.buildings);
+
+/** อาคาร 1–5 เท่านั้นที่ใช้เลือกชั้น 1–4 */
+export function isMainClassroomBuilding(building: string) {
+  return /^อาคาร [1-5]\b/.test(building || "");
+}
+
+export function floorsForBuilding(building: string) {
+  if (isMainClassroomBuilding(building)) return [...MAIN_BUILDING_FLOORS];
+  return [OTHER_PLACE_FLOOR];
+}
 
 /** ใช้กับ logic เดิมที่อิง building + zones */
 export const SCHOOL_ZONES: ZoneOption[] = SCHOOL_BUILDINGS.map((building) => ({
   building,
-  zones: [...FLOOR_OPTIONS]
+  zones: floorsForBuilding(building)
 }));
 
+/** จุดรับคืน — ใช้กับแจ้งพบของหายเท่านั้น */
 export const LF_RETURN_POINTS = [
-  "ห้องกิจการนักเรียน",
-  "ห้องพักครู",
-  "เคาน์เตอร์สำนักงาน",
-  "ถือไว้เอง (นัดรับ)"
+  "ห้องสภานักเรียน",
+  "ห้องประชาสัมพันธ์",
+  "ถือไว้เอง",
+  "อื่นๆ"
 ];
 
 export const CATEGORIES = [

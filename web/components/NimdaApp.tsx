@@ -53,6 +53,8 @@ export function NimdaApp() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
+  const [purgeConfirm, setPurgeConfirm] = useState("");
+  const [purgeSheet, setPurgeSheet] = useState(true);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -146,6 +148,35 @@ export function NimdaApp() {
       setToast("บันทึกข้อความเว็บแล้ว");
     } catch (err) {
       setToast(err instanceof Error ? err.message : "บันทึกไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function purgeDatabase() {
+    if (purgeConfirm !== "ล้างข้อมูลทั้งหมด") {
+      setToast('พิมพ์ว่า "ล้างข้อมูลทั้งหมด" เพื่อยืนยัน');
+      return;
+    }
+    if (!window.confirm("ล้างฐานข้อมูลจริง ๆ ใช่ไหม? กู้คืนไม่ได้")) return;
+    setBusy(true);
+    try {
+      const res = await fetch("/api/admin/purge", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirm: purgeConfirm,
+          clearSheet: purgeSheet
+        })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message);
+      setToast("ล้างฐานข้อมูลแล้ว");
+      setPurgeConfirm("");
+      setSelected(null);
+      await load();
+    } catch (err) {
+      setToast(err instanceof Error ? err.message : "ล้างไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -532,6 +563,35 @@ export function NimdaApp() {
             >
               บันทึกข้อความเว็บ
             </button>
+
+            <div className="border-t pt-4 mt-2 space-y-2">
+              <h3 className="font-bold text-red-800">ล้างฐานข้อมูล (อันตราย)</h3>
+              <p className="text-xs text-slate-500">
+                ลบ tickets / ประวัติ / เคลมใน Supabase — พิมพ์ยืนยันก่อนกด
+              </p>
+              <input
+                className="w-full border border-red-200 rounded-xl px-3 py-2"
+                placeholder='พิมพ์ว่า ล้างข้อมูลทั้งหมด'
+                value={purgeConfirm}
+                onChange={(e) => setPurgeConfirm(e.target.value)}
+              />
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={purgeSheet}
+                  onChange={(e) => setPurgeSheet(e.target.checked)}
+                />
+                ล้าง Google Sheet ด้วย
+              </label>
+              <button
+                type="button"
+                disabled={busy}
+                className="w-full bg-red-700 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
+                onClick={purgeDatabase}
+              >
+                ล้าง database
+              </button>
+            </div>
           </div>
         )}
 
