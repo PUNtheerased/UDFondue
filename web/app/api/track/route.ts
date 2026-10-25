@@ -23,6 +23,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(result);
     }
 
+    if (action === "trackLookup") {
+      const result = await callGas({
+        action: "trackLookup",
+        submitId: body.submitId
+      });
+      return NextResponse.json(result);
+    }
+
     const result = await callGas({
       action: "trackPublicDetail",
       submitId: body.submitId,

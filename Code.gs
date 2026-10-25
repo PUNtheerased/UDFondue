@@ -136,6 +136,9 @@ function doPost(e) {
     if (action === "trackPublicDetail") {
       return handleTrackPublicDetail_(data);
     }
+    if (action === "trackLookup") {
+      return handleTrackLookup_(data);
+    }
     if (action === "getZoneActiveIssues") {
       return handleGetZoneActiveIssues_(data);
     }
@@ -788,8 +791,34 @@ function handleTrackPublicDetail_(data) {
   if (String(report.trackToken) !== String(trackToken)) {
     return jsonResponse_({ status: "error", message: "ลิงก์ไม่ถูกต้อง" });
   }
+  if (report.status === "REJECTED_MODERATION") {
+    return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" });
+  }
 
   return jsonResponse_({ status: "success", report: toTrackReport_(report) });
+}
+
+/** ค้นหาด้วยเลขที่แจ้งอย่างเดียว (หน้า /track) — ไม่คืนข้อมูลลับ */
+function handleTrackLookup_(data) {
+  const submitId = String(data.submitId || "").trim();
+  if (!submitId) {
+    return jsonResponse_({ status: "error", message: "กรุณากรอกเลขที่แจ้ง" });
+  }
+
+  const sheet = getSheet_();
+  const row = findRowBySubmitId_(sheet, submitId);
+  if (row < 0) {
+    return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้ กรุณาตรวจสอบอีกครั้ง" });
+  }
+
+  const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
+  if (report.status === "REJECTED_MODERATION") {
+    return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้ กรุณาตรวจสอบอีกครั้ง" });
+  }
+
+  const safe = toTrackReport_(report);
+  safe.trackUrl = buildTrackUrl_(report.submitId, report.trackToken);
+  return jsonResponse_({ status: "success", report: safe });
 }
 
 function handleGetPublicLostFound_(data) {
@@ -824,11 +853,11 @@ function verifyAdminToken_(token) {
 // ---------- LINE Messaging API ----------
 
 function buildTrackUrl_(submitId, trackToken) {
-  if (!submitId) return LIFF_TRACK_URL;
+  if (!submitId) return PUBLIC_TRACK_BASE + "/";
   if (trackToken) {
     return PUBLIC_TRACK_BASE + "/" + encodeURIComponent(submitId) + "?t=" + encodeURIComponent(trackToken);
   }
-  return LIFF_TRACK_URL + "?id=" + encodeURIComponent(submitId);
+  return PUBLIC_TRACK_BASE + "/" + encodeURIComponent(submitId);
 }
 
 function buildSubmitConfirmationMessage_(submitId, category, status, trackToken) {

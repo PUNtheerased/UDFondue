@@ -43,7 +43,7 @@
 | LIFF | Endpoint แนะนำ |
 | --- | --- |
 | แจ้งเรื่อง | `https://ud-fondue.vercel.app/` |
-| ติดตาม | `https://ud-fondue.vercel.app/` หรือ deep link `/track/{id}?t=...` |
+| ติดตาม | `https://ud-fondue.vercel.app/track` |
 
 Scope ที่ต้องเปิด: **profile** + **openid** (จำเป็นสำหรับ `getIDToken`)
 
@@ -52,7 +52,8 @@ Scope ที่ต้องเปิด: **profile** + **openid** (จำเป�
 | หน้า | Path |
 | --- | --- |
 | ฟอร์มแจ้งเรื่อง | `/` |
-| ติดตาม | `/track/[ticketId]?t=TOKEN` |
+| ค้นหา / เรื่องของฉัน | `/track` |
+| ดูเคสตามเลขที่ | `/track/UDF-XXXX` หรือ `/track/UDF-XXXX?t=TOKEN` |
 | กระดานของหาย | `/lost-found` |
 | เจ้าหน้าที่ | `/nimda` |
 
