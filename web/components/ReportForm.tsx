@@ -86,7 +86,7 @@ export function ReportForm() {
   const [trackUrl, setTrackUrl] = useState("");
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
-  const [hasDraftBanner, setHasDraftBanner] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<FormDraft | null>(null);
 
   const zones = useMemo(
     () => SCHOOL_ZONES.find((z) => z.building === building)?.zones || [],
@@ -113,30 +113,34 @@ export function ReportForm() {
     gpsLat,
     gpsLng
   };
-  useFormDraft(draft, !successId);
+  // อย่าเขียนทับร่างระหว่างรอให้ผู้ใช้เลือกใน popup
+  useFormDraft(draft, !successId && !pendingDraft);
+
+  function applyDraft(saved: FormDraft) {
+    setStep(saved.step || 1);
+    setCategory(saved.category || "");
+    setOtherCategory(saved.otherCategory || "");
+    setDetail(saved.detail || "");
+    setBuilding(saved.building || "");
+    setZone(saved.zone || "");
+    setLocationNote(saved.locationNote || "");
+    setIsAnonymous(!!saved.isAnonymous);
+    setRoom(saved.room || "");
+    setStudentNo(saved.studentNo || "");
+    setContactOptional(saved.contactOptional || "");
+    setLfType(saved.lfType || "");
+    setLfWhen(saved.lfWhen || "");
+    setLfReturnPoint(saved.lfReturnPoint || "");
+    setLfSecretDetail(saved.lfSecretDetail || "");
+    setIsPublicShowcase(saved.isPublicShowcase !== false);
+    setGpsLat(saved.gpsLat || "");
+    setGpsLng(saved.gpsLng || "");
+  }
 
   useEffect(() => {
     const saved = loadDraft();
-    if (saved) {
-      setStep(saved.step || 1);
-      setCategory(saved.category || "");
-      setOtherCategory(saved.otherCategory || "");
-      setDetail(saved.detail || "");
-      setBuilding(saved.building || "");
-      setZone(saved.zone || "");
-      setLocationNote(saved.locationNote || "");
-      setIsAnonymous(!!saved.isAnonymous);
-      setRoom(saved.room || "");
-      setStudentNo(saved.studentNo || "");
-      setContactOptional(saved.contactOptional || "");
-      setLfType(saved.lfType || "");
-      setLfWhen(saved.lfWhen || "");
-      setLfReturnPoint(saved.lfReturnPoint || "");
-      setLfSecretDetail(saved.lfSecretDetail || "");
-      setIsPublicShowcase(saved.isPublicShowcase !== false);
-      setGpsLat(saved.gpsLat || "");
-      setGpsLng(saved.gpsLng || "");
-      setHasDraftBanner(true);
+    if (saved && (saved.category || saved.detail || saved.building)) {
+      setPendingDraft(saved);
     }
   }, []);
 
@@ -471,19 +475,73 @@ export function ReportForm() {
           ออฟไลน์ / สัญญาณเน็ตอ่อน — ข้อมูลร่างยังถูกบันทึกไว้
         </div>
       )}
-      {hasDraftBanner && (
-        <div className="bg-blue-50 text-blue-900 text-sm px-4 py-2 flex justify-between gap-2">
-          <span>กู้คืนร่างที่ค้างไว้แล้ว (รูปต้องเลือกใหม่)</span>
+      {pendingDraft && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4">
           <button
             type="button"
-            className="underline"
+            className="absolute inset-0 bg-slate-900/45 backdrop-blur-[2px] draft-modal-backdrop"
+            aria-label="ปิด"
             onClick={() => {
-              clearDraft();
-              setHasDraftBanner(false);
+              applyDraft(pendingDraft);
+              setPendingDraft(null);
             }}
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="draft-modal-title"
+            className="relative z-10 w-full max-w-sm bg-white rounded-3xl shadow-2xl p-6 draft-modal-panel"
           >
-            ล้างร่าง
-          </button>
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-800">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" aria-hidden>
+                <path
+                  d="M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path d="M14 3v5h5M8 13h8M8 17h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </div>
+            <h2 id="draft-modal-title" className="text-center text-lg font-bold text-slate-900">
+              พบร่างที่ค้างไว้
+            </h2>
+            <p className="mt-2 text-center text-sm text-slate-500 leading-relaxed">
+              มีข้อมูลที่กรอกค้างจากครั้งก่อน
+              {pendingDraft.category ? (
+                <>
+                  {" "}
+                  (ประเภท: <span className="font-medium text-slate-700">{pendingDraft.category}</span>)
+                </>
+              ) : null}
+              <br />
+              ต้องการกรอกต่อหรือเริ่มใหม่?
+              <span className="block mt-1 text-xs text-slate-400">รูปแนบต้องเลือกใหม่เสมอ</span>
+            </p>
+            <div className="mt-6 flex flex-col gap-2">
+              <button
+                type="button"
+                className="w-full rounded-2xl bg-blue-800 py-3.5 text-sm font-semibold text-white shadow-sm active:scale-[0.99]"
+                onClick={() => {
+                  applyDraft(pendingDraft);
+                  setPendingDraft(null);
+                  showToast("กู้คืนร่างแล้ว");
+                }}
+              >
+                ใช้ร่างต่อ
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-2xl border border-slate-200 bg-white py-3.5 text-sm font-semibold text-slate-700 active:scale-[0.99]"
+                onClick={() => {
+                  clearDraft();
+                  setPendingDraft(null);
+                  showToast("เริ่มฟอร์มใหม่แล้ว");
+                }}
+              >
+                เริ่มใหม่
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

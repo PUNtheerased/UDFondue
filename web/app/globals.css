@@ -28,3 +28,31 @@ body {
 .min-h-dvh {
   min-height: 100dvh;
 }
+
+@keyframes draft-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes draft-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.draft-modal-backdrop {
+  animation: draft-fade-in 0.2s ease-out;
+}
+
+.draft-modal-panel {
+  animation: draft-rise-in 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
