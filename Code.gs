@@ -383,8 +383,11 @@ function handleNotifyLine_(data) {
   const kind = String(data.kind || "");
   const submitId = data.submitId || "";
   try {
-    if (kind === "submit") {
-      sendLineThankYou_(data.lineId, submitId, data.category || "", data.status || DEFAULT_STATUS, data.trackToken || "");
+    if (kind === "submit" || kind === "submitGroupsOnly") {
+      // Next ยิงข้อความถึงผู้ใช้เองแล้ว — GAS ยิงเฉพาะกลุ่ม (หรือยิง user ถ้ายังไม่ได้ skip)
+      if (!data.skipUserPush && kind === "submit") {
+        sendLineThankYou_(data.lineId, submitId, data.category || "", data.status || DEFAULT_STATUS, data.trackToken || "");
+      }
       notifyAssignedGroup_(
         data.assignedGroup || resolveAssignedGroup_(data.category || ""),
         submitId,

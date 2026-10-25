@@ -219,12 +219,18 @@ export async function listPublicLostFound() {
     .from("tickets")
     .select("*")
     .eq("is_public_showcase", true)
-    .eq("merged_to_id", "")
-    .neq("lf_type", "")
     .order("created_at", { ascending: false })
-    .limit(120);
+    .limit(150);
   if (error) throw new Error(error.message);
-  return ((data || []) as TicketRow[]).filter((r) => !closed.has(r.status));
+  return ((data || []) as TicketRow[]).filter((r) => {
+    if (closed.has(r.status)) return false;
+    if (r.merged_to_id) return false;
+    const isLf =
+      !!r.lf_type ||
+      String(r.category || "").includes("ของหาย") ||
+      String(r.category || "").startsWith("ตามหาของหาย");
+    return isLf;
+  });
 }
 
 export async function listAdminTickets(opts?: { filterStatus?: string; search?: string }) {

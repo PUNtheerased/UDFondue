@@ -52,7 +52,8 @@ export function LostFoundClient({
   const filtered = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     return (reports || []).filter((r) => {
-      if (r.lfType && r.lfType !== tab) return false;
+      const type = r.lfType || "แจ้งทำของหาย";
+      if (type !== tab) return false;
       if (building && r.building !== building) return false;
       if (!q) return true;
       const hay = [r.detail, r.building, r.zone, r.lfReturnPoint, r.submitId]

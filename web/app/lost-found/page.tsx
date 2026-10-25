@@ -8,35 +8,41 @@ import { stripPublicReports } from "@/lib/stripPublic";
 export const dynamic = "force-dynamic";
 
 async function fetchLostFound() {
+  let reports: Record<string, unknown>[] = [];
+
   if (isTicketsDbReady()) {
     try {
       const rows = await listPublicLostFound();
-      return {
-        reports: stripPublicReports(
-          rows.map((r) => rowToPublic(r) as unknown as Record<string, unknown>)
-        )
-      };
+      reports = stripPublicReports(
+        rows.map((r) => rowToPublic(r) as unknown as Record<string, unknown>)
+      );
     } catch {
-      return { reports: [] as Record<string, unknown>[] };
+      reports = [];
     }
   }
 
-  const gasUrl = getGasUrl();
-  if (!gasUrl) return { reports: [] as Record<string, unknown>[] };
-  try {
-    const res = await fetch(gasUrl, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify({ action: "getPublicLostFound" }),
-      cache: "no-store"
-    });
-    const text = await res.text();
-    if (!text.trim() || text.trim().startsWith("<")) return { reports: [] };
-    const data = JSON.parse(text);
-    return { reports: data.reports || [] };
-  } catch {
-    return { reports: [] };
+  if (reports.length === 0) {
+    const gasUrl = getGasUrl();
+    if (gasUrl) {
+      try {
+        const res = await fetch(gasUrl, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify({ action: "getPublicLostFound" }),
+          cache: "no-store"
+        });
+        const text = await res.text();
+        if (text.trim() && !text.trim().startsWith("<")) {
+          const data = JSON.parse(text);
+          reports = data.reports || [];
+        }
+      } catch {
+        /* keep empty */
+      }
+    }
   }
+
+  return { reports };
 }
 
 export default async function LostFoundPage() {
