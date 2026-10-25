@@ -25,12 +25,14 @@
 | `ADMIN_SESSION_SECRET` | ใช่ | สุ่มยาว เช่น `openssl rand -hex 32` |
 | `ADMIN_LINE_IDS` | แนะนำ | LINE userId ของครู คั่นด้วย `,` (ล็อกอิน LINE ไม่พึ่ง GAS) |
 | `NEXT_PUBLIC_SITE_URL` | ใช่ | เช่น `https://ud-fondue.vercel.app` |
-
-ตัวอย่างชื่อตัวแปรดูได้ที่ `web/.env.example`
+| `UPSTASH_REDIS_REST_URL` | แนะนำ | Upstash Redis REST URL (rate limit กลาง) |
+| `UPSTASH_REDIS_REST_TOKEN` | แนะนำ | Upstash Redis REST token |
 
 หลังใส่ครบ → **Deployments → Redeploy**
 
-> **หมายเหตุ rate limit:** จำกัดในหน่วยความจำต่อ instance บน Vercel — เป็น soft limit ไม่ใช่ Redis
+> **Rate limit:** มี Upstash → ใช้ Redis · ไม่มี → หน่วยความจำต่อ instance  
+> **รูป:** อัปผ่าน `/api/upload` (service role) — รัน `storage-rls.sql` ใหม่เพื่อปิด anon insert  
+> **Sheets:** แอดมินอัปเดต/เคลม/โหวต จะ `mirrorUpdate` ไปชีต (Deploy Code.gs ที่มี action นี้)
 
 ## 2) Supabase Storage + Tickets
 

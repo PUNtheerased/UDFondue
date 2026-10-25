@@ -249,12 +249,12 @@ export function NimdaApp() {
         body: JSON.stringify({
           action: "assignJanitor",
           submitId: selected.submitId,
-          studentNote: editNote || "ส่งต่อภารโรงแล้ว กำลังดำเนินการ"
+          studentNote: editNote || "ดำเนินการต่อแล้ว กำลังดำเนินการ"
         })
       });
       const data = await res.json();
       if (data.status !== "success") throw new Error(data.message);
-      setToast("ส่งต่อภารโรงแล้ว");
+      setToast("ดำเนินการต่อแล้ว");
       setSelected(null);
       await load();
     } catch (err) {
@@ -357,6 +357,7 @@ export function NimdaApp() {
     for (const file of Array.from(files)) {
       const compressed = await compressImageForUpload(file);
       if (isSupabaseConfigured()) {
+        // cookie แอดมิน → /api/upload (folder after)
         const url = await uploadTicketImage(compressed, "after");
         setAfterUrls((prev) => [...prev, url]);
       } else {
@@ -408,7 +409,7 @@ export function NimdaApp() {
       <div className="min-h-dvh flex items-center justify-center px-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8 space-y-4">
           <h1 className="text-xl font-bold text-center">สำหรับครู / เจ้าหน้าที่</h1>
-          <p className="text-xs text-gray-500 text-center">ดูคิว คุมสถานะ และส่งต่อภารโรง</p>
+          <p className="text-xs text-gray-500 text-center">ดูคิว คุมสถานะ และดำเนินการต่อ</p>
           <input
             type="password"
             className="w-full border rounded-xl px-3 py-3"
@@ -616,7 +617,7 @@ export function NimdaApp() {
                 <p className="text-xs text-gray-400 mt-2">
                   {r.submitId} · +{r.upvoteCount || 0} · {r.building}/{r.zone}
                   {r.urgency === "เร่งด่วน" ? " · เร่งด่วน" : ""}
-                  {r.assignedTo === "janitor" ? " · ส่งภารโรงแล้ว" : ""}
+                  {r.assignedTo === "janitor" ? " · ดำเนินการต่อแล้ว" : ""}
                   {r.handoff?.status ? ` · เคลม:${r.handoff.status}` : ""}
                 </p>
               </button>
@@ -704,7 +705,7 @@ export function NimdaApp() {
               disabled={busy}
               onClick={assignJanitor}
             >
-              ส่งต่อภารโรง
+              ดำเนินการต่อ
             </button>
 
             <button

@@ -276,7 +276,13 @@ export function ReportForm() {
         const fake = item.preview;
         return { ...item, url: fake, status: "done" };
       }
-      const url = await uploadTicketImage(item.file, "tickets");
+      const idToken = allowLocalLineBypass()
+        ? `dev:${lineId || "U-TEST-USER-ID"}`
+        : window.liff?.getIDToken?.() || "";
+      if (!idToken && !allowLocalLineBypass()) {
+        throw new Error("เข้าสู่ระบบ LINE ก่อนอัปโหลดรูป");
+      }
+      const url = await uploadTicketImage(item.file, "tickets", idToken || undefined);
       return { ...item, url, status: "done" };
     } catch (err) {
       if (attempt < 3) {
@@ -289,7 +295,7 @@ export function ReportForm() {
         error: err instanceof Error ? err.message : "อัปโหลดไม่สำเร็จ"
       };
     }
-  }, []);
+  }, [lineId]);
 
   async function onPickFiles(fileList: FileList | null) {
     if (!fileList?.length) return;

@@ -67,10 +67,11 @@ export const SCHOOL_ZONES: ZoneOption[] = SCHOOL_BUILDINGS.map((building) => ({
   zones: floorsForBuilding(building)
 }));
 
-/** จุดรับคืน — ใช้กับแจ้งพบของหายเท่านั้น */
+/** จุดรับคืน / จุดฝากของ — ใช้กับแจ้งพบของหายเท่านั้น */
 export const LF_RETURN_POINTS = [
   "ห้องสภานักเรียน",
   "ห้องประชาสัมพันธ์",
+  "ป้อมยาม",
   "ถือไว้เอง",
   "อื่นๆ"
 ];

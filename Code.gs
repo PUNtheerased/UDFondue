@@ -6,7 +6,7 @@
  * การ Save อย่างเดียวไม่ทำให้ Web App URL ใช้โค้ดใหม่
  */
 
-const API_VERSION = "v13-audit-hardening";
+const API_VERSION = "v14-mirror-update";
 const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v11";
 const SHEET_REPAIR_CACHE_KEY = "sheet_repair_v8";
 const LOG_COLUMNS = 9;
@@ -199,6 +199,9 @@ function doPost(e) {
     }
     if (action === "mirrorSubmit") {
       return handleMirrorSubmit_(data, timestamp, payloadSize);
+    }
+    if (action === "mirrorUpdate") {
+      return handleMirrorUpdate_(data, timestamp, payloadSize);
     }
     if (action === "adminPurgeSheet") {
       return handleAdminPurgeSheet_(data);
@@ -401,6 +404,82 @@ function handleMirrorSubmit_(data, timestamp, payloadSize) {
   return jsonResponse_({ status: "success", message: "mirror ok", submitId: submitId, row: newRow });
 }
 
+/** อัปเดตแถว Sheets ให้ตรงกับ Supabase หลังแอดมิน/LF/upvote เปลี่ยน */
+function handleMirrorUpdate_(data, timestamp, payloadSize) {
+  const submitId = data.submitId || "";
+  if (!submitId) {
+    return jsonResponse_({ status: "error", message: "ไม่มี submitId" });
+  }
+
+  const sheet = getSheet_();
+  ensureSheetHeaders_(sheet, true);
+  let row = findRowBySubmitId_(sheet, submitId);
+  if (row < 0) {
+    // ยังไม่มีในชีต — สร้างใหม่แบบ mirrorSubmit
+    return handleMirrorSubmit_(data, timestamp, payloadSize);
+  }
+
+  const isAnonymous = !!data.isAnonymous || data.isAnonymous === "true" || data.isAnonymous === "TRUE";
+  const imageUrls = normalizeImageUrls_(data);
+  const afterUrls = String(data.afterImageUrl || "")
+    .split("\n")
+    .map(function (s) { return String(s || "").trim(); })
+    .filter(function (u) { return u.indexOf("http") === 0; });
+  const status = data.status || DEFAULT_STATUS;
+  const updatedAt = formatDateTimeTh_(timestamp);
+  const adminNote = data.studentNote || data.adminNote || "";
+  const isPublic =
+    data.isPublicShowcase === true ||
+    data.isPublicShowcase === "true" ||
+    data.isPublicShowcase === "TRUE";
+
+  sheet.getRange(row, COL.LINE_ID).setValue(data.lineId || "");
+  sheet.getRange(row, COL.NAME).setValue(isAnonymous ? "ไม่ประสงค์ออกนาม" : (data.name || ""));
+  sheet.getRange(row, COL.ROOM).setValue(isAnonymous ? "" : (data.room || ""));
+  sheet.getRange(row, COL.STUDENT_NO).setValue(isAnonymous ? "" : (data.studentNo || ""));
+  sheet.getRange(row, COL.CATEGORY).setValue(data.category || "");
+  sheet.getRange(row, COL.DETAIL).setValue(data.detail || "");
+  sheet.getRange(row, COL.IMAGE_COUNT).setValue(imageUrls.length || Number(data.imageCount) || 0);
+  sheet.getRange(row, COL.IMAGE_URL).setValue(imageUrls.join("\n"));
+  sheet.getRange(row, COL.STATUS).setValue(status);
+  sheet.getRange(row, COL.ADMIN_NOTE).setValue(adminNote);
+  sheet.getRange(row, COL.STATUS_UPDATED).setValue(updatedAt);
+  sheet.getRange(row, COL.IS_ANONYMOUS).setValue(isAnonymous ? "TRUE" : "FALSE");
+  sheet.getRange(row, COL.CONTACT_OPTIONAL).setValue(data.contactOptional || "");
+  sheet.getRange(row, COL.BUILDING).setValue(data.building || "");
+  sheet.getRange(row, COL.ZONE).setValue(data.zone || "");
+  sheet.getRange(row, COL.LOCATION_NOTE).setValue(data.locationNote || "");
+  sheet.getRange(row, COL.LF_TYPE).setValue(data.lfType || "");
+  sheet.getRange(row, COL.LF_WHEN).setValue(data.lfWhen || "");
+  sheet.getRange(row, COL.LF_RETURN_POINT).setValue(data.lfReturnPoint || "");
+  sheet.getRange(row, COL.LF_SECRET_DETAIL).setValue(data.lfSecretDetail || "");
+  sheet.getRange(row, COL.IS_PUBLIC_SHOWCASE).setValue(isPublic ? "TRUE" : "FALSE");
+  sheet.getRange(row, COL.UPVOTE_COUNT).setValue(Number(data.upvoteCount) || 0);
+  sheet.getRange(row, COL.UPVOTED_LINE_IDS).setValue(data.upvotedLineIds || "");
+  sheet.getRange(row, COL.MERGED_TO_ID).setValue(data.mergedToId || "");
+  sheet.getRange(row, COL.ASSIGNED_GROUP).setValue(data.assignedGroup || "");
+  sheet.getRange(row, COL.AFTER_IMAGE_COUNT).setValue(afterUrls.length || Number(data.afterImageCount) || 0);
+  sheet.getRange(row, COL.AFTER_IMAGE_URL).setValue(afterUrls.join("\n") || data.afterImageUrl || "");
+  if (data.statusHistory) {
+    sheet.getRange(row, COL.STATUS_HISTORY).setValue(
+      typeof data.statusHistory === "string" ? data.statusHistory : JSON.stringify(data.statusHistory)
+    );
+  }
+  if (data.trackToken) {
+    sheet.getRange(row, COL.TRACK_TOKEN).setValue(data.trackToken);
+  }
+
+  appendStatusHistory_(sheet, row, status, updatedAt, "mirror");
+
+  try {
+    writeLog_(timestamp, payloadSize, "mirrorUpdate", 0, 0, 0, status, "success", submitId);
+  } catch (logErr) {
+    Logger.log("writeLog mirrorUpdate: " + logErr.toString());
+  }
+
+  return jsonResponse_({ status: "success", message: "mirror update ok", submitId: submitId, row: row });
+}
+
 /** LINE-only notifications from Next (Supabase is SoT). */
 function handleNotifyLine_(data) {
   const kind = String(data.kind || "");
@@ -438,7 +517,7 @@ function handleNotifyLine_(data) {
         data.category || "ปัญหาที่พบ",
         data.building || "",
         data.zone || "",
-        "[ส่งต่อภารโรง] " + String(data.detail || "").substring(0, 120)
+        "[ดำเนินการต่อ] " + String(data.detail || "").substring(0, 120)
       );
       return jsonResponse_({ status: "success" });
     }

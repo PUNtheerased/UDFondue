@@ -17,16 +17,27 @@ export function isSupabaseConfigured() {
   return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 }
 
-export async function uploadTicketImage(file: File, folder: "tickets" | "after" = "tickets") {
-  const supabase = getSupabaseBrowser();
-  // Always store as jpeg after client compression (EXIF already stripped)
-  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
-  const { error } = await supabase.storage.from("udfondue-images").upload(path, file, {
-    cacheControl: "3600",
-    upsert: false,
-    contentType: "image/jpeg"
+/**
+ * อัปโหลดผ่าน /api/upload (service role) — ต้องมี idToken หรือ cookie แอดมิน
+ */
+export async function uploadTicketImage(
+  file: File,
+  folder: "tickets" | "after" = "tickets",
+  idToken?: string
+) {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("folder", folder);
+  if (idToken) form.append("idToken", idToken);
+
+  const res = await fetch("/api/upload", {
+    method: "POST",
+    body: form,
+    credentials: "include"
   });
-  if (error) throw error;
-  const { data } = supabase.storage.from("udfondue-images").getPublicUrl(path);
-  return data.publicUrl;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.status !== "success" || !data.url) {
+    throw new Error(data.message || "อัปโหลดไม่สำเร็จ");
+  }
+  return String(data.url);
 }

@@ -32,8 +32,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rlIp = rateLimit(`submit:ip:${ip}`, 12, 10 * 60 * 1000);
-    const rlLine = rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
+    const rlIp = await rateLimit(`submit:ip:${ip}`, 12, 10 * 60 * 1000);
+    const rlLine = await rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
     if (!rlIp.ok || !rlLine.ok) {
       return NextResponse.json(
         { status: "error", message: "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },

@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     const adminPin = process.env.ADMIN_PIN || "";
     const adminLineIds = getAdminLineIds();
 
-    const guard = rateLimit(`admin-login-guard:${ip}`, 5, 15 * 60 * 1000);
+    const guard = await rateLimit(`admin-login-guard:${ip}`, 5, 15 * 60 * 1000);
     if (!guard.ok) {
       return NextResponse.json(
         {

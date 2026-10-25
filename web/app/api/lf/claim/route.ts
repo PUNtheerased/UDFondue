@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { notifyLine } from "@/lib/notifyLine";
 import { rateLimit } from "@/lib/rateLimit";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
     if (!lineAuth.ok) {
       return NextResponse.json({ status: "error", message: lineAuth.message }, { status: 403 });
     }
-    const rl = rateLimit(`lf-claim:${lineAuth.sub}`, 10, 10 * 60 * 1000);
+    const rl = await rateLimit(`lf-claim:${lineAuth.sub}`, 10, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json({ status: "error", message: "ลองบ่อยเกินไป รอสักครู่" }, { status: 429 });
     }
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
     const submitId = String(body.submitId || body.foundSubmitId || "");
     const handoff = await claimFoundItem(submitId, lineAuth.sub);
     const ticket = await getTicketBySubmitId(submitId);
+    await mirrorTicketToSheet(submitId, ticket);
     if (ticket?.line_id) {
       await notifyLine({
         kind: "lf_claim",

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertDevMode, getAdminSession, getNimdaMode } from "@/lib/adminSession";
 import { callGas } from "@/lib/gas";
+import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { notifyLine } from "@/lib/notifyLine";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import {
@@ -10,6 +11,10 @@ import {
   unlockHandoff,
   updateTicketStatus
 } from "@/lib/ticketsDb";
+
+async function mirrorIds(ids: string[]) {
+  await Promise.all(ids.filter(Boolean).map((id) => mirrorTicketToSheet(id)));
+}
 
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
@@ -36,11 +41,14 @@ export async function POST(req: NextRequest) {
           .map((s: string) => s.trim())
           .filter(Boolean);
         await mergeTickets(into, fromIds, byRole);
+        await mirrorIds([into, ...fromIds]);
         return NextResponse.json({ status: "success", message: "รวมเคสแล้ว" });
       }
 
       if (action === "adminModerationHide") {
-        await hideTicket(String(body.submitId || ""), byRole);
+        const submitId = String(body.submitId || "");
+        await hideTicket(submitId, byRole);
+        await mirrorTicketToSheet(submitId);
         return NextResponse.json({ status: "success", message: "ซ่อนรายการแล้ว" });
       }
 
@@ -50,9 +58,10 @@ export async function POST(req: NextRequest) {
           submitId,
           status: "กำลังดำเนินการ",
           assignedTo: "janitor",
-          studentNote: body.studentNote || "ส่งต่อภารโรงแล้ว กำลังดำเนินการ",
+          studentNote: body.studentNote || "ดำเนินการต่อแล้ว กำลังดำเนินการ",
           byRole
         });
+        await mirrorTicketToSheet(submitId, row);
         await notifyLine({
           kind: "janitor",
           assignedGroup: "FACILITY",
@@ -63,7 +72,7 @@ export async function POST(req: NextRequest) {
           detail: row.detail,
           imageUrl: row.image_url
         });
-        return NextResponse.json({ status: "success", message: "ส่งต่อภารโรงแล้ว" });
+        return NextResponse.json({ status: "success", message: "ดำเนินการต่อแล้ว" });
       }
 
       if (action === "unlockHandoff") {
@@ -77,7 +86,9 @@ export async function POST(req: NextRequest) {
       }
 
       if (action === "forceCancelHandoff") {
-        await cancelHandoff(String(body.submitId || ""), "", true);
+        const submitId = String(body.submitId || "");
+        await cancelHandoff(submitId, "", true);
+        await mirrorTicketToSheet(submitId);
         return NextResponse.json({ status: "success", message: "ยกเลิกเคลมแล้ว" });
       }
 
@@ -91,6 +102,7 @@ export async function POST(req: NextRequest) {
         afterImageUrls: body.afterImageUrls || [],
         byRole
       });
+      await mirrorTicketToSheet(submitId, row);
 
       let lineNotify: Awaited<ReturnType<typeof notifyLine>> | null = null;
       if (body.status && row.line_id) {

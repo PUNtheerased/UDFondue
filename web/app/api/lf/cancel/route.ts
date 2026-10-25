@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { cancelHandoff } from "@/lib/ticketsDb";
 
@@ -14,7 +15,9 @@ export async function POST(req: NextRequest) {
     if (!lineAuth.ok) {
       return NextResponse.json({ status: "error", message: lineAuth.message }, { status: 403 });
     }
-    await cancelHandoff(String(body.submitId || body.foundSubmitId || ""), lineAuth.sub, false);
+    const submitId = String(body.submitId || body.foundSubmitId || "");
+    await cancelHandoff(submitId, lineAuth.sub, false);
+    await mirrorTicketToSheet(submitId);
     return NextResponse.json({ status: "success", message: "ยกเลิกเคลมแล้ว" });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Cancel failed";

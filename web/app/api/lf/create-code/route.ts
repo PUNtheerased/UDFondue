@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     if (!lineAuth.ok) {
       return NextResponse.json({ status: "error", message: lineAuth.message }, { status: 403 });
     }
-    const rl = rateLimit(`lf-code:${lineAuth.sub}`, 8, 10 * 60 * 1000);
+    const rl = await rateLimit(`lf-code:${lineAuth.sub}`, 8, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json({ status: "error", message: "สร้างรหัสบ่อยเกินไป" }, { status: 429 });
     }

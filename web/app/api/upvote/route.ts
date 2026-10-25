@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { rateLimit } from "@/lib/rateLimit";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { upvoteTicket } from "@/lib/ticketsDb";
@@ -14,13 +15,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", message: lineAuth.message }, { status: 403 });
     }
 
-    const rl = rateLimit(`upvote:${ip}:${lineAuth.sub}`, 20, 10 * 60 * 1000);
+    const rl = await rateLimit(`upvote:${ip}:${lineAuth.sub}`, 20, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json({ status: "error", message: "กดบ่อยเกินไป" }, { status: 429 });
     }
 
     if (isTicketsDbReady()) {
-      const result = await upvoteTicket(String(body.submitId || ""), lineAuth.sub);
+      const submitId = String(body.submitId || "");
+      const result = await upvoteTicket(submitId, lineAuth.sub);
+      if (!result.already) {
+        await mirrorTicketToSheet(submitId);
+      }
       return NextResponse.json({
         status: "success",
         message: result.already ? "โหวตไปแล้ว" : "โหวตแล้ว",
