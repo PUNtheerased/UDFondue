@@ -1,4 +1,4 @@
-import { SCHOOL_ZONES } from "@/constants/schoolZones";
+import { SCHOOL_BUILDINGS } from "@/constants/schoolZones";
 import { LostFoundClient } from "@/components/LostFoundClient";
 import { getGasUrl } from "@/lib/env";
 
@@ -28,7 +28,7 @@ export default async function LostFoundPage() {
   return (
     <LostFoundClient
       initialReports={reports}
-      buildings={SCHOOL_ZONES.map((z) => z.building)}
+      buildings={SCHOOL_BUILDINGS}
     />
   );
 }

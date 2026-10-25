@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
+  BUILDING_GROUPS,
   CATEGORIES,
-  LF_RETURN_POINTS,
-  SCHOOL_ZONES
+  FLOOR_OPTIONS,
+  LF_RETURN_POINTS
 } from "@/constants/schoolZones";
 import { clearDraft, FormDraft, loadDraft, useFormDraft } from "@/hooks/useFormDraft";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
@@ -89,10 +90,8 @@ export function ReportForm() {
   const [error, setError] = useState("");
   const [pendingDraft, setPendingDraft] = useState<FormDraft | null>(null);
 
-  const zones = useMemo(
-    () => SCHOOL_ZONES.find((z) => z.building === building)?.zones || [],
-    [building]
-  );
+  const roomPlaceholder =
+    zone === "อื่นๆ" ? "โปรดระบุ" : zone ? "เลขห้อง เช่น 421" : "เลือกชั้นก่อน";
 
   const draft: FormDraft = {
     step,
@@ -401,7 +400,12 @@ export function ReportForm() {
       return;
     }
     if (!building || !zone) {
-      setError("กรุณาเลือกอาคารและจุดสังเกต");
+      setError("กรุณาเลือกสถานที่และชั้น / จุด");
+      setStep(2);
+      return;
+    }
+    if (zone === "อื่นๆ" && !locationNote.trim()) {
+      setError("กรุณาระบุจุดสังเกตในช่องโปรดระบุ");
       setStep(2);
       return;
     }
@@ -666,34 +670,50 @@ export function ReportForm() {
               onChange={(e) => {
                 setBuilding(e.target.value);
                 setZone("");
+                setLocationNote("");
               }}
             >
-              <option value="">เลือกอาคาร / พื้นที่</option>
-              {SCHOOL_ZONES.map((z) => (
-                <option key={z.building} value={z.building}>
-                  {z.building}
-                </option>
+              <option value="">เลือกสถานที่</option>
+              {BUILDING_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.buildings.map((b) => (
+                    <option key={b} value={b}>
+                      {b}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
-            <select
-              className="w-full border rounded-xl px-3 py-2"
-              value={zone}
-              onChange={(e) => setZone(e.target.value)}
-              disabled={!building}
-            >
-              <option value="">เลือกชั้น / จุดสังเกต</option>
-              {zones.map((z) => (
-                <option key={z} value={z}>
-                  {z}
-                </option>
-              ))}
-            </select>
-            <input
-              className="w-full border rounded-xl px-3 py-2"
-              placeholder="จุดอ้างอิงเพิ่มเติม (ไม่บังคับ)"
-              value={locationNote}
-              onChange={(e) => setLocationNote(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <select
+                className="w-1/2 border rounded-xl px-3 py-2"
+                value={zone}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  if (zone === "อื่นๆ" || next === "อื่นๆ") setLocationNote("");
+                  setZone(next);
+                }}
+                disabled={!building}
+              >
+                <option value="">เลือกชั้น</option>
+                {FLOOR_OPTIONS.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="w-1/2 border rounded-xl px-3 py-2"
+                placeholder={roomPlaceholder}
+                value={locationNote}
+                onChange={(e) => setLocationNote(e.target.value)}
+                disabled={!zone}
+                required={zone === "อื่นๆ"}
+              />
+            </div>
+            <p className="text-xs text-gray-500">
+              ชั้นครึ่งซ้าย · เลขห้อง / จุดสังเกตครึ่งขวา (เช่น หน้าห้อง 421, ศูนย์ HCEC 1)
+            </p>
             <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
               ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
             </button>

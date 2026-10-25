@@ -17,6 +17,7 @@ export type TrackReport = {
   studentNo?: string;
   building?: string;
   zone?: string;
+  locationNote?: string;
   imageUrl?: string;
   afterImageUrl?: string;
   adminNote?: string;
@@ -63,6 +64,7 @@ export function TicketDetailView({
             <p className="text-xs text-gray-500">
               สถานที่: {report.building}
               {report.zone ? ` / ${report.zone}` : ""}
+              {report.locationNote ? ` · ${report.locationNote}` : ""}
             </p>
           )}
           <p className="text-xs text-gray-400">
