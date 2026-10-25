@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadRecentTracks, normalizeSubmitIdInput, rememberTrackId } from "@/lib/recentTracks";
 import { ensureLiff } from "@/lib/ensureLiff";
+import { getClientIdToken } from "@/lib/clientLine";
 
 type MyTicket = {
   submitId: string;
@@ -36,6 +37,10 @@ export function TrackHome() {
 
   useEffect(() => {
     async function boot() {
+      if (typeof window !== "undefined") {
+        const q = new URLSearchParams(window.location.search);
+        if (q.get("tab") === "mine") setTab("mine");
+      }
       const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
       const ready = await ensureLiff(liffId);
       if (ready.bypass) {
@@ -49,6 +54,13 @@ export function TrackHome() {
         const profile = await ready.liff.getProfile();
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
+        // กลับจาก LINE login → เปิดแท็บเรื่องของฉัน
+        if (typeof window !== "undefined") {
+          const q = new URLSearchParams(window.location.search);
+          if (q.get("tab") === "mine" || q.has("liffClientId") || q.has("code")) {
+            setTab("mine");
+          }
+        }
       } catch {
         // เปิดนอก LINE ได้
       }
@@ -63,10 +75,15 @@ export function TrackHome() {
       setMineLoading(true);
       setMineError("");
       try {
+        const idToken = await getClientIdToken();
         const res = await fetch("/api/track", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "trackList", lineId })
+          body: JSON.stringify({
+            action: "trackList",
+            idToken: idToken || undefined,
+            lineId: idToken ? undefined : lineId
+          })
         });
         const data = await res.json();
         if (cancelled) return;
@@ -96,16 +113,25 @@ export function TrackHome() {
     setQuery(submitId);
     setLoading(true);
     try {
+      const idToken = await getClientIdToken();
       const res = await fetch("/api/track", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "trackLookup", submitId })
+        body: JSON.stringify({
+          action: "trackLookup",
+          submitId,
+          idToken: idToken || undefined
+        })
       });
       const data = await res.json();
       if (data.status !== "success") throw new Error(data.message || "ไม่พบเลขที่แจ้งนี้");
       rememberTrackId(submitId);
       setRecent(loadRecentTracks());
-      router.push(`/track/${encodeURIComponent(submitId)}`);
+      const token = data.report?.trackToken as string | undefined;
+      const href = token
+        ? `/track/${encodeURIComponent(submitId)}?t=${encodeURIComponent(token)}`
+        : `/track/${encodeURIComponent(submitId)}`;
+      router.push(href);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ค้นหาไม่สำเร็จ");
     } finally {
@@ -127,6 +153,7 @@ export function TrackHome() {
       if (ready.bypass) {
         setLineId("U-TEST-USER-ID");
         setDisplayName("ผู้ใช้งานจำลอง");
+        setTab("mine");
         return;
       }
       if (!ready.ok || !ready.liff) {
@@ -137,12 +164,13 @@ export function TrackHome() {
         const profile = await ready.liff.getProfile();
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
+        setTab("mine");
         return;
       }
-      // กลับมาหน้าเดิมหลังล็อกอิน (รวมแท็บเรื่องของฉัน)
+      // กลับมาแท็บเรื่องของฉันหลังล็อกอิน
       const redirectUri =
         typeof window !== "undefined"
-          ? `${window.location.origin}/track`
+          ? `${window.location.origin}/track?tab=mine`
           : undefined;
       ready.liff.login(redirectUri ? { redirectUri } : undefined);
     } catch (err) {
@@ -274,6 +302,7 @@ export function TrackHome() {
                       </div>
                       <p className="text-sm text-gray-700 mt-1">{r.category}</p>
                       <p className="text-xs text-gray-400 mt-1 line-clamp-2">{r.detail}</p>
+                      <p className="text-xs text-blue-700 mt-2 font-medium">ดูรายละเอียด →</p>
                     </Link>
                   ))}
                 </div>

@@ -79,7 +79,7 @@ export function TicketDetailView({
           </p>
           {summary ? (
             <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-900 leading-relaxed">
-              เห็นแค่สถานะคร่าว ๆ — เปิดจากลิงก์ใน LINE เพื่อดูรายละเอียด
+              เห็นแค่สถานะคร่าว ๆ — เข้าสู่ระบบ LINE ที่หน้าติดตาม หรือเปิดจากลิงก์ในแชท เพื่อดูรายละเอียด
             </div>
           ) : (
             <>

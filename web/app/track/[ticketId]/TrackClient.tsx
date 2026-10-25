@@ -6,6 +6,7 @@ import Link from "next/link";
 import { TicketDetailView, TrackReport } from "@/components/TicketDetailView";
 import { rememberTrackId } from "@/lib/recentTracks";
 import { getClientIdToken } from "@/lib/clientLine";
+import { ensureLiff } from "@/lib/ensureLiff";
 import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
 
 export function TrackClient({ ticketId }: { ticketId: string }) {
@@ -18,6 +19,8 @@ export function TrackClient({ ticketId }: { ticketId: string }) {
     setError("");
     const token = search.get("t") || "";
     try {
+      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      await ensureLiff(liffId);
       const idToken = await getClientIdToken();
       const res = await fetch("/api/track", {
         method: "POST",

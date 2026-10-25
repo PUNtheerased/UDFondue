@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { isProdRuntime } from "@/lib/runtime";
 import { stripPublicReport, stripPublicReports } from "@/lib/stripPublic";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import {
@@ -66,9 +67,21 @@ export async function POST(req: NextRequest) {
 
     if (isTicketsDbReady()) {
       if (action === "trackList") {
-        const lineId = String(body.lineId || "");
+        let lineId = "";
+        if (body.idToken) {
+          const auth = await verifyLineIdToken(String(body.idToken));
+          if (!auth.ok) {
+            return NextResponse.json({ status: "error", message: auth.message }, { status: 401 });
+          }
+          lineId = auth.sub;
+        } else if (!isProdRuntime() && body.lineId) {
+          lineId = String(body.lineId);
+        }
         if (!lineId) {
-          return NextResponse.json({ status: "error", message: "ไม่พบ LINE ID" }, { status: 400 });
+          return NextResponse.json(
+            { status: "error", message: "เข้าสู่ระบบ LINE ก่อนเพื่อดูเรื่องของตัวเอง" },
+            { status: 401 }
+          );
         }
         const rows = await listTicketsByLineId(lineId);
         const reports = [];
@@ -77,23 +90,34 @@ export async function POST(req: NextRequest) {
           pub.statusHistory = await getHistory(row.submit_id);
           const handoff = await getActiveHandoff(row.submit_id);
           if (handoff) pub.handoff = handoffToPublic(handoff, lineId);
-          reports.push(stripPublicReport({ ...pub, trackToken: row.track_token } as Record<string, unknown>));
+          const safe = stripPublicReport({ ...pub } as Record<string, unknown>);
+          // เจ้าของเรื่องเก็บ token ไว้เปิดดูละเอียดจากลิงก์
+          safe.trackToken = row.track_token;
+          reports.push(safe);
         }
         return NextResponse.json({ status: "success", reports });
       }
 
       if (action === "trackDetail") {
-        const lineId = String(body.lineId || "");
+        let lineId = "";
+        if (body.idToken) {
+          const auth = await verifyLineIdToken(String(body.idToken));
+          if (!auth.ok) {
+            return NextResponse.json({ status: "error", message: auth.message }, { status: 401 });
+          }
+          lineId = auth.sub;
+        } else if (!isProdRuntime() && body.lineId) {
+          lineId = String(body.lineId);
+        }
         const submitId = String(body.submitId || "");
         const row = await getTicketBySubmitId(submitId);
-        if (!row || row.line_id !== lineId) {
+        if (!lineId || !row || row.line_id !== lineId) {
           return NextResponse.json({ status: "error", message: "ไม่พบเรื่องนี้" }, { status: 404 });
         }
         const report = await enrichReport(submitId, lineId, true);
-        return NextResponse.json({
-          status: "success",
-          report: stripPublicReport({ ...report, trackToken: row.track_token } as Record<string, unknown>)
-        });
+        const safe = stripPublicReport({ ...report } as Record<string, unknown>);
+        safe.trackToken = row.track_token;
+        return NextResponse.json({ status: "success", report: safe });
       }
 
       if (action === "trackLookup") {
@@ -101,6 +125,16 @@ export async function POST(req: NextRequest) {
         const row = await getTicketBySubmitId(submitId);
         if (!row || row.merged_to_id) {
           return NextResponse.json({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" }, { status: 404 });
+        }
+        // ถ้าล็อกอิน LINE และเป็นเจ้าของเรื่อง — ส่งรายละเอียดเต็มเลย
+        if (body.idToken) {
+          const auth = await verifyLineIdToken(String(body.idToken));
+          if (auth.ok && auth.sub === row.line_id) {
+            const report = await enrichReport(submitId, auth.sub, true);
+            const safe = stripPublicReport({ ...report } as Record<string, unknown>);
+            safe.trackToken = row.track_token;
+            return NextResponse.json({ status: "success", report: safe });
+          }
         }
         const summary = {
           submitId: row.submit_id,
@@ -115,20 +149,26 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ status: "success", report: summary });
       }
 
-      // trackPublicDetail
+      // trackPublicDetail — เต็มเมื่อมี trackToken ถูกต้อง หรือเป็นเจ้าของที่ล็อกอิน LINE
       const submitId = String(body.submitId || "");
       const trackToken = String(body.trackToken || "");
       const row = await getTicketBySubmitId(submitId);
       if (!row || row.merged_to_id) {
         return NextResponse.json({ status: "error", message: "ไม่พบเลขที่แจ้งนี้" }, { status: 404 });
       }
-      const full = !!trackToken && trackToken === row.track_token;
 
-      let viewerLineId = full ? row.line_id : "";
+      let viewerLineId = "";
+      let isOwner = false;
       if (body.idToken) {
         const auth = await verifyLineIdToken(String(body.idToken));
-        if (auth.ok) viewerLineId = auth.sub;
+        if (auth.ok) {
+          viewerLineId = auth.sub;
+          isOwner = auth.sub === row.line_id;
+        }
       }
+      const tokenOk = !!trackToken && trackToken === row.track_token;
+      const full = tokenOk || isOwner;
+      if (tokenOk && !viewerLineId) viewerLineId = row.line_id;
 
       if (!full) {
         const handoff =
