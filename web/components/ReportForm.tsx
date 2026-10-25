@@ -17,7 +17,8 @@ declare global {
     liff?: {
       init: (opts: { liffId: string }) => Promise<void>;
       isLoggedIn: () => boolean;
-      login: () => void;
+      login: (opts?: { redirectUri?: string }) => void;
+      logout: () => void;
       getProfile: () => Promise<{ userId: string; displayName: string }>;
       getIDToken: () => string | null;
       isInClient?: () => boolean;
