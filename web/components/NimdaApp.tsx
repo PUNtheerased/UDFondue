@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import imageCompression from "browser-image-compression";
 import { STATUS_OPTIONS } from "@/constants/schoolZones";
+import { compressImageForUpload } from "@/lib/compressImage";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
 
 type Report = {
@@ -183,12 +183,7 @@ export function NimdaApp() {
   async function onAfterFiles(files: FileList | null) {
     if (!files?.length) return;
     for (const file of Array.from(files)) {
-      const compressed = await imageCompression(file, {
-        maxSizeMB: 0.5,
-        maxWidthOrHeight: 1280,
-        fileType: "image/jpeg",
-        initialQuality: 0.75
-      });
+      const compressed = await compressImageForUpload(file);
       if (isSupabaseConfigured()) {
         const url = await uploadTicketImage(compressed, "after");
         setAfterUrls((prev) => [...prev, url]);

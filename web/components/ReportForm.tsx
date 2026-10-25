@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import imageCompression from "browser-image-compression";
 import {
   CATEGORIES,
   LF_RETURN_POINTS,
@@ -9,6 +8,7 @@ import {
 } from "@/constants/schoolZones";
 import { clearDraft, FormDraft, loadDraft, useFormDraft } from "@/hooks/useFormDraft";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { compressImageForUpload } from "@/lib/compressImage";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
 import { TurnstileWidget } from "@/components/Turnstile";
 
@@ -216,13 +216,7 @@ export function ReportForm() {
     if (!fileList?.length) return;
     const files = Array.from(fileList).slice(0, 5 - images.length);
     for (const file of files) {
-      const compressed = await imageCompression(file, {
-        maxSizeMB: 0.5,
-        maxWidthOrHeight: 1280,
-        useWebWorker: true,
-        fileType: "image/jpeg",
-        initialQuality: 0.75
-      });
+      const compressed = await compressImageForUpload(file);
       const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const preview = URL.createObjectURL(compressed);
       const item: UploadedImage = {

@@ -29,8 +29,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rl = rateLimit(`submit:${ip}:${lineAuth.sub}`, 5, 10 * 60 * 1000);
-    if (!rl.ok) {
+    // Layer 1a: per IP · Layer 1b: per LINE user (GAS also limits by lineId)
+    const rlIp = rateLimit(`submit:ip:${ip}`, 12, 10 * 60 * 1000);
+    const rlLine = rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
+    if (!rlIp.ok || !rlLine.ok) {
       return NextResponse.json(
         { status: "error", message: "ส่งเรื่องบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },
         { status: 429 }

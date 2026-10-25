@@ -1,9 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "UDFondue | ระบบแจ้งเรื่องนักเรียน",
   description: "แจ้งปัญหา ตามหาของหาย และเสนอความคิดเห็นต่อสภานักเรียน"
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#1e3a8a"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

@@ -1614,6 +1614,7 @@ function toTrackReport_(report) {
   } catch (e) {
     history = [];
   }
+  const anonymous = !!report.isAnonymous;
   return {
     submitId: report.submitId,
     category: report.category,
@@ -1632,9 +1633,11 @@ function toTrackReport_(report) {
     upvoteCount: report.upvoteCount || 0,
     date: report.date,
     time: report.time,
-    name: report.isAnonymous ? "ไม่ประสงค์ออกนาม" : report.name,
+    name: anonymous ? "ไม่ประสงค์ออกนาม" : report.name,
+    room: anonymous ? "" : report.room,
+    // ไม่ส่ง: lineId, lfSecretDetail, contactOptional, studentNo, trackToken, gps*
     statusHistory: history,
-    isAnonymous: !!report.isAnonymous
+    isAnonymous: anonymous
   };
 }
 

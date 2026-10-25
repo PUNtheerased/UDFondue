@@ -19,12 +19,12 @@ export function isSupabaseConfigured() {
 
 export async function uploadTicketImage(file: File, folder: "tickets" | "after" = "tickets") {
   const supabase = getSupabaseBrowser();
-  const ext = (file.name.split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "");
-  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  // Always store as jpeg after client compression (EXIF already stripped)
+  const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.jpg`;
   const { error } = await supabase.storage.from("udfondue-images").upload(path, file, {
     cacheControl: "3600",
     upsert: false,
-    contentType: file.type || "image/jpeg"
+    contentType: "image/jpeg"
   });
   if (error) throw error;
   const { data } = supabase.storage.from("udfondue-images").getPublicUrl(path);
