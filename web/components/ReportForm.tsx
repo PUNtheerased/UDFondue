@@ -93,12 +93,11 @@ export function ReportForm() {
   const [error, setError] = useState("");
   const [pendingDraft, setPendingDraft] = useState<FormDraft | null>(null);
 
+  const isMainBuilding = isMainClassroomBuilding(building);
   const floorChoices = building ? floorsForBuilding(building) : [];
   const roomPlaceholder = !zone
     ? "เลือกชั้นก่อน"
-    : isMainClassroomBuilding(building) && zone !== "อื่นๆ"
-      ? "เลขห้อง เช่น 123"
-      : "โปรดระบุ";
+    : "เลขห้อง เช่น 123";
 
   const draft: FormDraft = {
     step,
@@ -317,7 +316,7 @@ export function ReportForm() {
     }
 
     if (!window.liff) {
-      throw new Error("เปิดหน้านี้จากแอป LINE อีกครั้งนะ");
+      throw new Error("เปิดหน้านี้จากแอป LINE อีกครั้ง");
     }
 
     let token = window.liff.getIDToken();
@@ -395,7 +394,7 @@ export function ReportForm() {
   async function submitForm() {
     setError("");
     if (!category) {
-      setError("เลือกประเภทเรื่องก่อนนะ");
+      setError("เลือกประเภทเรื่องก่อน");
       setStep(1);
       return;
     }
@@ -423,12 +422,12 @@ export function ReportForm() {
     }
     if (category === "ตามหาของหาย") {
       if (!lfType || !lfWhen || !detail.trim()) {
-        setError("กรอกข้อมูลของหายให้ครบก่อนนะ");
+        setError("กรอกข้อมูลของหายให้ครบก่อน");
         setStep(2);
         return;
       }
       if (lfType === "แจ้งพบของหาย" && !lfReturnPoint) {
-        setError("เลือกจุดรับคืนด้วยนะ");
+        setError("เลือกจุดรับคืนด้วย");
         setStep(2);
         return;
       }
@@ -447,7 +446,7 @@ export function ReportForm() {
       return;
     }
     if (!turnstileToken) {
-      setError("ยืนยันว่าไม่ใช่บอทก่อนส่งนะ");
+      setError("ยืนยันว่าไม่ใช่บอทก่อนส่ง");
       return;
     }
 
@@ -494,7 +493,7 @@ export function ReportForm() {
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
           <div className="text-4xl text-blue-800 mb-3">✓</div>
           <h2 className="text-xl font-bold text-blue-900">รับเรื่องเรียบร้อยแล้ว</h2>
-          <p className="text-sm text-gray-500 mt-2">รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้นะ</p>
+          <p className="text-sm text-gray-500 mt-2">รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้</p>
           <div className="mt-4 bg-blue-50 rounded-xl p-4 text-left">
             <p className="text-xs text-blue-800 font-semibold mb-1">เลขที่ติดตาม</p>
             <p className="font-mono text-sm break-all">{successId}</p>
@@ -719,38 +718,37 @@ export function ReportForm() {
                 </optgroup>
               ))}
             </select>
-            <div className="flex gap-2">
-              <select
-                className="w-1/2 border rounded-xl px-3 py-2"
-                value={zone}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (zone === "อื่นๆ" || next === "อื่นๆ") setLocationNote("");
-                  setZone(next);
-                }}
-                disabled={!building}
-              >
-                <option value="">{isMainClassroomBuilding(building) ? "เลือกชั้น" : "จุด"}</option>
-                {floorChoices.map((f) => (
-                  <option key={f} value={f}>
-                    {f}
-                  </option>
-                ))}
-              </select>
+            {building && isMainBuilding ? (
+              <div className="flex gap-2">
+                <select
+                  className="w-1/2 border rounded-xl px-3 py-2"
+                  value={zone}
+                  onChange={(e) => setZone(e.target.value)}
+                >
+                  <option value="">เลือกชั้น</option>
+                  {floorChoices.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  className="w-1/2 border rounded-xl px-3 py-2"
+                  placeholder={roomPlaceholder}
+                  value={locationNote}
+                  onChange={(e) => setLocationNote(e.target.value)}
+                  disabled={!zone}
+                />
+              </div>
+            ) : building ? (
               <input
-                className="w-1/2 border rounded-xl px-3 py-2"
-                placeholder={roomPlaceholder}
+                className="w-full border rounded-xl px-3 py-2"
+                placeholder="โปรดระบุ"
                 value={locationNote}
                 onChange={(e) => setLocationNote(e.target.value)}
-                disabled={!zone}
-                required={!isMainClassroomBuilding(building) || zone === "อื่นๆ"}
+                required
               />
-            </div>
-            <p className="text-xs text-gray-500">
-              {isMainClassroomBuilding(building)
-                ? "อาคาร 1–5 เลือกชั้น 1–4 แล้วพิมพ์เลขห้องด้านขวา"
-                : "นอกอาคาร 1–5 พิมพ์จุดสังเกตด้านขวา (โปรดระบุ)"}
-            </p>
+            ) : null}
             <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
               ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
             </button>

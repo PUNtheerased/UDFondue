@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadRecentTracks, normalizeSubmitIdInput, rememberTrackId } from "@/lib/recentTracks";
-import { allowLocalLineBypass } from "@/lib/runtime";
+import { ensureLiff } from "@/lib/ensureLiff";
 
 type MyTicket = {
   submitId: string;
@@ -27,6 +27,7 @@ export function TrackHome() {
   const [mine, setMine] = useState<MyTicket[]>([]);
   const [mineLoading, setMineLoading] = useState(false);
   const [mineError, setMineError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
 
   useEffect(() => {
@@ -34,25 +35,25 @@ export function TrackHome() {
   }, []);
 
   useEffect(() => {
-    async function initLiff() {
-      if (allowLocalLineBypass()) {
+    async function boot() {
+      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      const ready = await ensureLiff(liffId);
+      if (ready.bypass) {
         setLineId("U-TEST-USER-ID");
         setDisplayName("ผู้ใช้งานจำลอง");
         return;
       }
-      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      if (!ready.ok || !ready.liff) return;
       try {
-        if (!window.liff || !liffId) return;
-        await window.liff.init({ liffId });
-        if (!window.liff.isLoggedIn()) return;
-        const profile = await window.liff.getProfile();
+        if (!ready.liff.isLoggedIn()) return;
+        const profile = await ready.liff.getProfile();
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
       } catch {
         // เปิดนอก LINE ได้
       }
     }
-    initLiff();
+    boot();
   }, []);
 
   useEffect(() => {
@@ -117,18 +118,38 @@ export function TrackHome() {
     await goLookup(query);
   }
 
-  function loginLine() {
-    if (allowLocalLineBypass()) {
-      setLineId("U-TEST-USER-ID");
-      setDisplayName("ผู้ใช้งานจำลอง");
-      return;
+  async function loginLine() {
+    setMineError("");
+    setLoginBusy(true);
+    try {
+      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      const ready = await ensureLiff(liffId);
+      if (ready.bypass) {
+        setLineId("U-TEST-USER-ID");
+        setDisplayName("ผู้ใช้งานจำลอง");
+        return;
+      }
+      if (!ready.ok || !ready.liff) {
+        setMineError(ready.message || "เข้าสู่ระบบ LINE ไม่สำเร็จ");
+        return;
+      }
+      if (ready.liff.isLoggedIn()) {
+        const profile = await ready.liff.getProfile();
+        setLineId(profile.userId);
+        setDisplayName(profile.displayName);
+        return;
+      }
+      // กลับมาหน้าเดิมหลังล็อกอิน (รวมแท็บเรื่องของฉัน)
+      const redirectUri =
+        typeof window !== "undefined"
+          ? `${window.location.origin}/track`
+          : undefined;
+      ready.liff.login(redirectUri ? { redirectUri } : undefined);
+    } catch (err) {
+      setMineError(err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ");
+    } finally {
+      setLoginBusy(false);
     }
-    const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
-    if (!window.liff || !liffId) {
-      setMineError("เปิดจากแอป LINE เพื่อดูเรื่องของตัวเองนะ");
-      return;
-    }
-    window.liff.login();
   }
 
   return (
@@ -209,15 +230,19 @@ export function TrackHome() {
           <section className="bg-white rounded-2xl p-5 space-y-3">
             {!lineId ? (
               <div className="text-center space-y-3 py-4">
-                <p className="text-sm text-gray-600">เข้าสู่ระบบด้วย LINE เพื่อดูรายการที่ท่านแจ้งไว้</p>
+                <p className="text-sm text-gray-600">เข้าสู่ระบบด้วย LINE เพื่อดูรายการที่แจ้งไว้</p>
                 <button
                   type="button"
                   onClick={loginLine}
-                  className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold"
+                  disabled={loginBusy}
+                  className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold disabled:opacity-60"
                 >
-                  เข้าสู่ระบบ LINE
+                  {loginBusy ? "กำลังเปิด LINE..." : "เข้าสู่ระบบ LINE"}
                 </button>
                 {mineError && <p className="text-sm text-red-600">{mineError}</p>}
+                <p className="text-xs text-gray-400">
+                  ถ้ากดแล้วไม่ไปต่อ ลองเปิดหน้านี้จากในแอป LINE โดยตรง
+                </p>
               </div>
             ) : (
               <>

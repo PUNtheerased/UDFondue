@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const rlLine = rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
     if (!rlIp.ok || !rlLine.ok) {
       return NextResponse.json(
-        { status: "error", message: "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่นะ", code: "RATE_LIMIT" },
+        { status: "error", message: "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },
         { status: 429 }
       );
     }
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(
         {
           status: "error",
-          message: "พบข้อความไม่เหมาะสม ลองแก้ถ้อยคำให้อ่านง่ายขึ้นก่อนส่งนะ",
+          message: "พบข้อความไม่เหมาะสม ลองแก้ถ้อยคำให้อ่านง่ายขึ้นก่อนส่ง",
           code: "PROFANITY"
         },
         { status: 400 }

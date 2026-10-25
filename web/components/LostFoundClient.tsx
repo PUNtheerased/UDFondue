@@ -68,7 +68,7 @@ export function LostFoundClient({
     setToast("");
     try {
       const idToken = await getClientIdToken();
-      if (!idToken) throw new Error("เปิดจากแอป LINE ก่อนนะ");
+      if (!idToken) throw new Error("เปิดจากแอป LINE ก่อน");
       const res = await fetch("/api/lf/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

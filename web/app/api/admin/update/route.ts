@@ -14,7 +14,7 @@ import {
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
   if (!session) {
-    return NextResponse.json({ status: "error", message: "เข้าสู่ระบบก่อนนะ" }, { status: 401 });
+    return NextResponse.json({ status: "error", message: "เข้าสู่ระบบก่อน" }, { status: 401 });
   }
 
   try {
