@@ -85,6 +85,8 @@ export function ReportForm() {
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [zoneIssues, setZoneIssues] = useState<ZoneIssue[]>([]);
+  const [upvotedIds, setUpvotedIds] = useState<Record<string, true>>({});
+  const [upvoteBusyId, setUpvoteBusyId] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMsg, setLoadingMsg] = useState("");
   const [successId, setSuccessId] = useState("");
@@ -360,6 +362,8 @@ export function ReportForm() {
   }
 
   async function upvote(submitId: string) {
+    if (upvotedIds[submitId] || upvoteBusyId) return;
+    setUpvoteBusyId(submitId);
     try {
       const idToken = await refreshIdToken();
       const res = await fetch("/api/upvote", {
@@ -369,16 +373,22 @@ export function ReportForm() {
       });
       const data = await res.json();
       if (data.status !== "success") throw new Error(data.message || "อัปโหวตไม่สำเร็จ");
-      showToast("บันทึก +1 เรียบร้อย");
+
+      // นับตามเซิร์ฟเวอร์เท่านั้น — คนละ LINE โหวตได้ครั้งเดียว
+      const count = typeof data.upvoteCount === "number" ? data.upvoteCount : undefined;
       setZoneIssues((prev) =>
         prev.map((r) =>
           r.submitId === submitId
-            ? { ...r, upvoteCount: (r.upvoteCount || 0) + 1 }
+            ? { ...r, upvoteCount: count ?? r.upvoteCount ?? 0 }
             : r
         )
       );
+      setUpvotedIds((prev) => ({ ...prev, [submitId]: true }));
+      showToast(data.already ? "โหวตไปแล้ว" : "บันทึก +1 เรียบร้อย");
     } catch (err) {
       setError(err instanceof Error ? err.message : "อัปโหวตไม่สำเร็จ");
+    } finally {
+      setUpvoteBusyId("");
     }
   }
 
@@ -773,10 +783,15 @@ export function ReportForm() {
                     <p className="text-gray-600 line-clamp-2">{issue.detail}</p>
                     <button
                       type="button"
-                      className="mt-2 text-blue-800 font-semibold"
+                      className="mt-2 text-blue-800 font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={!!upvotedIds[issue.submitId] || upvoteBusyId === issue.submitId}
                       onClick={() => upvote(issue.submitId)}
                     >
-                      เจอแบบนี้เหมือนกัน (+1){issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}
+                      {upvotedIds[issue.submitId]
+                        ? `โหวตแล้ว${issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}`
+                        : upvoteBusyId === issue.submitId
+                          ? "กำลังบันทึก..."
+                          : `เจอแบบนี้เหมือนกัน (+1)${issue.upvoteCount ? ` · ${issue.upvoteCount}` : ""}`}
                     </button>
                   </div>
                 ))}
