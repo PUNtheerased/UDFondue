@@ -816,9 +816,35 @@ function handleTrackLookup_(data) {
     return jsonResponse_({ status: "error", message: "ไม่พบเลขที่แจ้งนี้ กรุณาตรวจสอบอีกครั้ง" });
   }
 
-  const safe = toTrackReport_(report);
-  safe.trackUrl = buildTrackUrl_(report.submitId, report.trackToken);
-  return jsonResponse_({ status: "success", report: safe });
+  // ค้นหาด้วยรหัสเปล่า = สรุปสาธารณะเท่านั้น (กัน enumeration)
+  const safe = toPublicTrackSummary_(report);
+  return jsonResponse_({ status: "success", report: safe, access: "public_summary" });
+}
+
+function toPublicTrackSummary_(report) {
+  let history = [];
+  try {
+    history = report.statusHistory ? JSON.parse(report.statusHistory) : [];
+  } catch (e) {
+    history = [];
+  }
+  if (!Array.isArray(history)) history = [];
+  history = history.map(function (h) {
+    return { status: h.status || "", at: h.at || "" };
+  });
+  return {
+    submitId: report.submitId,
+    status: report.status,
+    category: report.category,
+    building: report.building,
+    zone: report.zone,
+    date: report.date,
+    time: report.time,
+    statusUpdated: report.statusUpdated,
+    statusHistory: history,
+    upvoteCount: report.upvoteCount || 0,
+    isPublicSummary: true
+  };
 }
 
 function handleGetPublicLostFound_(data) {

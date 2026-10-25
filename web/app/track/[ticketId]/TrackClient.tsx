@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { TicketDetailView, TrackReport } from "@/components/TicketDetailView";
+import { rememberTrackId } from "@/lib/recentTracks";
 
 export function TrackClient({ ticketId }: { ticketId: string }) {
   const search = useSearchParams();
@@ -36,6 +37,7 @@ export function TrackClient({ ticketId }: { ticketId: string }) {
         const data = await res.json();
         if (data.status !== "success") throw new Error(data.message || "โหลดไม่สำเร็จ");
         setReport(data.report);
+        rememberTrackId(ticketId);
       } catch (err) {
         setError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
       } finally {

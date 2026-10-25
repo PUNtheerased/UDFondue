@@ -3,8 +3,11 @@ import { adminCookieName, createAdminSessionToken } from "@/lib/adminSession";
 import { getAdminLineIds } from "@/lib/env";
 import { verifyLineIdToken } from "@/lib/lineAuth";
 import { callGas } from "@/lib/gas";
+import { rateLimit } from "@/lib/rateLimit";
 
 export async function POST(req: NextRequest) {
+  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+
   try {
     const body = await req.json();
     const pin = String(body.password || body.pin || "");
@@ -12,7 +15,19 @@ export async function POST(req: NextRequest) {
     const adminPin = process.env.ADMIN_PIN || "";
     const adminLineIds = getAdminLineIds();
 
-    let subject = "";
+    const guard = rateLimit(`admin-login-guard:${ip}`, 5, 15 * 60 * 1000);
+    if (!guard.ok) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+          code: "RATE_LIMIT"
+        },
+        { status: 429 }
+      );
+    }
+
+    let authorized = false;
 
     if (idToken) {
       const auth = await verifyLineIdToken(idToken);
@@ -22,11 +37,15 @@ export async function POST(req: NextRequest) {
       if (adminLineIds.length === 0 || !adminLineIds.includes(auth.sub)) {
         return NextResponse.json({ status: "error", message: "ไม่มีสิทธิ์แอดมิน" }, { status: 403 });
       }
-    } else if (!(pin && adminPin && pin === adminPin)) {
+      authorized = true;
+    } else if (pin && adminPin && pin === adminPin) {
+      authorized = true;
+    }
+
+    if (!authorized) {
       return NextResponse.json({ status: "error", message: "รหัสผ่านไม่ถูกต้อง" }, { status: 403 });
     }
 
-    // Always mint GAS admin token for sheet operations
     const gas = await callGas<{ status: string; adminToken?: string; message?: string }>({
       action: "adminAuth",
       password: pin || adminPin
@@ -34,13 +53,12 @@ export async function POST(req: NextRequest) {
     if (gas.status !== "success" || !gas.adminToken) {
       return NextResponse.json({ status: "error", message: gas.message || "รหัสผ่านไม่ถูกต้อง" }, { status: 403 });
     }
-    subject = `gas:${gas.adminToken}`;
 
-    const token = createAdminSessionToken(subject);
-    const res = NextResponse.json({ status: "success", subject });
+    const token = createAdminSessionToken(`gas:${gas.adminToken}`);
+    const res = NextResponse.json({ status: "success" });
     res.cookies.set(adminCookieName(), token, {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "strict",
       secure: process.env.NODE_ENV === "production",
       path: "/",
       maxAge: 8 * 60 * 60

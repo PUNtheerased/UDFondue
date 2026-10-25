@@ -9,6 +9,7 @@ import {
 import { clearDraft, FormDraft, loadDraft, useFormDraft } from "@/hooks/useFormDraft";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { compressImageForUpload } from "@/lib/compressImage";
+import { rememberTrackId } from "@/lib/recentTracks";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
 import { TurnstileWidget } from "@/components/Turnstile";
 
@@ -142,7 +143,41 @@ export function ReportForm() {
     if (saved && (saved.category || saved.detail || saved.building)) {
       setPendingDraft(saved);
     }
+    try {
+      const cat = new URLSearchParams(window.location.search).get("category");
+      if (cat && CATEGORIES.some((c) => c.value === cat)) {
+        setCategory(cat);
+      }
+    } catch {
+      /* ignore */
+    }
   }, []);
+
+  // Android / browser Back ใน wizard = ถอย step ไม่ปิด LIFF
+  useEffect(() => {
+    if (successId || pendingDraft) return;
+    try {
+      window.history.pushState({ udfStep: step }, "");
+    } catch {
+      /* ignore */
+    }
+    const onPop = () => {
+      setStep((current) => {
+        if (current <= 1) return 1;
+        const next = current - 1;
+        queueMicrotask(() => {
+          try {
+            window.history.pushState({ udfStep: next }, "");
+          } catch {
+            /* ignore */
+          }
+        });
+        return next;
+      });
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [step, successId, pendingDraft]);
 
   useEffect(() => {
     async function initLiff() {
@@ -418,6 +453,7 @@ export function ReportForm() {
 
       clearDraft();
       setSuccessId(submitId);
+      rememberTrackId(submitId);
       setTrackUrl(data.trackUrl || `/track/${submitId}?t=${data.trackToken || ""}`);
       if (window.liff?.isInClient?.()) {
         setTimeout(() => window.liff?.closeWindow?.(), 6000);
@@ -549,14 +585,26 @@ export function ReportForm() {
         <h1 className="text-2xl font-bold">UDFondue</h1>
         <p className="text-sm text-blue-100 mt-1">ระบบแจ้งเรื่องสำหรับนักเรียน</p>
         <div className="mt-4 flex justify-center gap-2 text-xs">
-          {[1, 2, 3].map((n) => (
-            <span
-              key={n}
-              className={`px-3 py-1 rounded-full ${step === n ? "bg-white text-blue-900" : "bg-white/20"}`}
-            >
-              ขั้นตอนที่ {n}/3
-            </span>
-          ))}
+          {[1, 2, 3].map((n) => {
+            const reachable = n <= step;
+            return (
+              <button
+                key={n}
+                type="button"
+                disabled={!reachable}
+                onClick={() => reachable && setStep(n)}
+                className={`px-3 py-1 rounded-full transition ${
+                  step === n
+                    ? "bg-white text-blue-900"
+                    : reachable
+                      ? "bg-white/25 text-white"
+                      : "bg-white/10 text-white/50"
+                }`}
+              >
+                ขั้นตอนที่ {n}/3
+              </button>
+            );
+          })}
         </div>
       </header>
 

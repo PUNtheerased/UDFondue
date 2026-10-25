@@ -25,14 +25,20 @@ export function LostFoundClient({
 }) {
   const [tab, setTab] = useState<"แจ้งทำของหาย" | "แจ้งพบของหาย">("แจ้งทำของหาย");
   const [building, setBuilding] = useState("");
+  const [keyword, setKeyword] = useState("");
 
   const filtered = useMemo(() => {
+    const q = keyword.trim().toLowerCase();
     return (initialReports || []).filter((r) => {
       if (r.lfType && r.lfType !== tab) return false;
       if (building && r.building !== building) return false;
-      return true;
+      if (!q) return true;
+      const hay = [r.detail, r.building, r.zone, r.lfReturnPoint, r.submitId]
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(q);
     });
-  }, [initialReports, tab, building]);
+  }, [initialReports, tab, building, keyword]);
 
   return (
     <div className="min-h-dvh pb-safe">
@@ -55,6 +61,12 @@ export function LostFoundClient({
             </button>
           ))}
         </div>
+        <input
+          className="w-full border rounded-xl px-3 py-2 bg-white"
+          placeholder="ค้นหา เช่น กุญแจ, บัตรนักเรียน, กระบอกน้ำ"
+          value={keyword}
+          onChange={(e) => setKeyword(e.target.value)}
+        />
         <select
           className="w-full border rounded-xl px-3 py-2 bg-white"
           value={building}
@@ -70,7 +82,21 @@ export function LostFoundClient({
 
         <div className="space-y-3">
           {filtered.length === 0 && (
-            <p className="text-center text-gray-400 py-10">ยังไม่มีรายการ</p>
+            <div className="rounded-3xl border border-dashed border-slate-200 bg-white px-6 py-10 text-center">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-800 text-xl">
+                ⌕
+              </div>
+              <p className="font-semibold text-slate-800">ยังไม่มีรายการในขณะนี้</p>
+              <p className="mt-1 text-sm text-slate-500 leading-relaxed">
+                ยังไม่มีรายการแจ้งของหายที่ตรงเงื่อนไข — แจ้งทำของหายหรือพบของได้ที่ฟอร์ม
+              </p>
+              <Link
+                href="/?category=%E0%B8%95%E0%B8%B2%E0%B8%A1%E0%B8%AB%E0%B8%B2%E0%B8%82%E0%B8%AD%E0%B8%87%E0%B8%AB%E0%B8%B2%E0%B8%A2"
+                className="mt-4 inline-flex rounded-2xl bg-blue-800 px-5 py-2.5 text-sm font-semibold text-white"
+              >
+                ไปแจ้งของหาย / พบของ
+              </Link>
+            </div>
           )}
           {filtered.map((r) => {
             const img = String(r.imageUrl || "")
@@ -91,7 +117,7 @@ export function LostFoundClient({
                 )}
                 <div className="flex gap-2 pt-1">
                   <Link
-                    href={`/track/${r.submitId}${r.trackToken ? `?t=${r.trackToken}` : ""}`}
+                    href={`/track/${r.submitId}`}
                     className="text-sm text-blue-800 font-semibold"
                   >
                     ดูสถานะ
@@ -103,9 +129,6 @@ export function LostFoundClient({
             );
           })}
         </div>
-        <Link href="/" className="block text-center text-blue-800 text-sm underline py-4">
-          แจ้งเรื่องใหม่
-        </Link>
       </main>
     </div>
   );

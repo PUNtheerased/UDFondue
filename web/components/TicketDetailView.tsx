@@ -9,7 +9,7 @@ export type TrackReport = {
   statusUpdated?: string;
   statusHistory?: Array<{ status: string; at: string; note?: string }> | string;
   category: string;
-  detail: string;
+  detail?: string;
   date?: string;
   time?: string;
   name?: string;
@@ -21,6 +21,7 @@ export type TrackReport = {
   afterImageUrl?: string;
   adminNote?: string;
   isAnonymous?: boolean;
+  isPublicSummary?: boolean;
 };
 
 function splitUrls(raw?: string) {
@@ -37,8 +38,9 @@ export function TicketDetailView({
   report: TrackReport;
   showBackLink?: boolean;
 }) {
-  const before = splitUrls(report.imageUrl);
-  const after = splitUrls(report.afterImageUrl);
+  const summary = !!report.isPublicSummary;
+  const before = summary ? [] : splitUrls(report.imageUrl);
+  const after = summary ? [] : splitUrls(report.afterImageUrl);
 
   return (
     <div className="min-h-dvh pb-safe">
@@ -57,25 +59,36 @@ export function TicketDetailView({
         </section>
         <section className="bg-white rounded-2xl p-4 space-y-2 text-sm">
           <p className="font-semibold text-lg">{report.category}</p>
-          <p className="text-gray-600 whitespace-pre-wrap">{report.detail}</p>
+          {(report.building || report.zone) && (
+            <p className="text-xs text-gray-500">
+              สถานที่: {report.building}
+              {report.zone ? ` / ${report.zone}` : ""}
+            </p>
+          )}
           <p className="text-xs text-gray-400">
             {report.date} {report.time}
           </p>
-          <p className="text-xs text-gray-500">
-            {report.isAnonymous
-              ? "ไม่ประสงค์ออกนาม"
-              : `${report.name || "-"} · ห้อง ${report.room || "-"}`}
-          </p>
-          {(report.building || report.zone) && (
-            <p className="text-xs text-gray-500">
-              สถานที่: {report.building} / {report.zone}
-            </p>
-          )}
-          {report.adminNote && (
-            <div className="bg-blue-50 rounded-xl p-3">
-              <p className="text-xs font-semibold text-blue-800">หมายเหตุเจ้าหน้าที่</p>
-              <p>{report.adminNote}</p>
+          {summary ? (
+            <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-900 leading-relaxed">
+              แสดงเฉพาะสถานะสรุป — เปิดจากลิงก์ใน LINE หรือแท็บ “เรื่องของฉัน” เพื่อดูรายละเอียดและรูปภาพ
             </div>
+          ) : (
+            <>
+              {report.detail && (
+                <p className="text-gray-600 whitespace-pre-wrap">{report.detail}</p>
+              )}
+              <p className="text-xs text-gray-500">
+                {report.isAnonymous
+                  ? "ไม่ประสงค์ออกนาม"
+                  : `${report.name || "-"} · ห้อง ${report.room || "-"}`}
+              </p>
+              {report.adminNote && (
+                <div className="bg-blue-50 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-blue-800">หมายเหตุเจ้าหน้าที่</p>
+                  <p>{report.adminNote}</p>
+                </div>
+              )}
+            </>
           )}
         </section>
         {before.length > 0 && (

@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { loadRecentTracks, normalizeSubmitIdInput, rememberTrackId } from "@/lib/recentTracks";
 
 type MyTicket = {
   submitId: string;
@@ -13,13 +14,6 @@ type MyTicket = {
   trackUrl?: string;
   trackToken?: string;
 };
-
-function normalizeSubmitId(raw: string) {
-  return String(raw || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s+/g, "");
-}
 
 export function TrackHome() {
   const router = useRouter();
@@ -32,6 +26,11 @@ export function TrackHome() {
   const [mine, setMine] = useState<MyTicket[]>([]);
   const [mineLoading, setMineLoading] = useState(false);
   const [mineError, setMineError] = useState("");
+  const [recent, setRecent] = useState<string[]>([]);
+
+  useEffect(() => {
+    setRecent(loadRecentTracks());
+  }, []);
 
   useEffect(() => {
     async function initLiff() {
@@ -44,7 +43,7 @@ export function TrackHome() {
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
       } catch {
-        // เปิดนอก LINE ได้ — ค้นหาด้วยเลขที่อย่างเดียว
+        // เปิดนอก LINE ได้
       }
     }
     initLiff();
@@ -80,14 +79,14 @@ export function TrackHome() {
     };
   }, [tab, lineId]);
 
-  async function onSearch(e: FormEvent) {
-    e.preventDefault();
+  async function goLookup(raw: string) {
     setError("");
-    const submitId = normalizeSubmitId(query);
+    const submitId = normalizeSubmitIdInput(raw);
     if (!submitId) {
       setError("กรุณากรอกเลขที่แจ้ง");
       return;
     }
+    setQuery(submitId);
     setLoading(true);
     try {
       const res = await fetch("/api/track", {
@@ -97,12 +96,19 @@ export function TrackHome() {
       });
       const data = await res.json();
       if (data.status !== "success") throw new Error(data.message || "ไม่พบเลขที่แจ้งนี้");
+      rememberTrackId(submitId);
+      setRecent(loadRecentTracks());
       router.push(`/track/${encodeURIComponent(submitId)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "ค้นหาไม่สำเร็จ");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function onSearch(e: FormEvent) {
+    e.preventDefault();
+    await goLookup(query);
   }
 
   function loginLine() {
@@ -146,16 +152,19 @@ export function TrackHome() {
         {tab === "search" && (
           <section className="bg-white rounded-2xl p-5 space-y-3">
             <p className="text-sm text-gray-600">
-              กรอกเลขที่ติดตามที่ได้รับหลังแจ้งเรื่อง เช่น <span className="font-mono">UDF-XXXXXXXX</span>
+              กรอกเลขที่ติดตาม เช่น <span className="font-mono">UDF-XXXXXXXX</span> — ถ้าพิมพ์เฉพาะรหัส
+              ระบบจะเติม <span className="font-mono">UDF-</span> ให้
             </p>
             <form onSubmit={onSearch} className="space-y-3">
               <input
-                className="w-full border rounded-xl px-3 py-3 font-mono tracking-wide"
+                className="w-full border rounded-xl px-3 py-3 font-mono tracking-wide uppercase"
                 placeholder="UDF-XXXXXXXX"
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(e) => setQuery(e.target.value.toUpperCase())}
+                onBlur={() => setQuery(normalizeSubmitIdInput(query))}
                 autoCapitalize="characters"
                 autoCorrect="off"
+                spellCheck={false}
               />
               {error && <p className="text-sm text-red-600">{error}</p>}
               <button
@@ -166,6 +175,23 @@ export function TrackHome() {
                 {loading ? "กำลังค้นหา..." : "ค้นหา"}
               </button>
             </form>
+            {recent.length > 0 && (
+              <div className="pt-1">
+                <p className="text-xs text-gray-500 mb-2">ค้นหาล่าสุด</p>
+                <div className="flex flex-wrap gap-2">
+                  {recent.map((id) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 font-mono text-xs text-blue-900"
+                      onClick={() => goLookup(id)}
+                    >
+                      {id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
         )}
 
@@ -203,6 +229,7 @@ export function TrackHome() {
                           : `/track/${encodeURIComponent(r.submitId)}`
                       }
                       className="block border rounded-xl p-3 hover:border-blue-300"
+                      onClick={() => rememberTrackId(r.submitId)}
                     >
                       <div className="flex justify-between gap-2">
                         <p className="font-mono text-sm font-semibold">{r.submitId}</p>
@@ -219,16 +246,6 @@ export function TrackHome() {
             )}
           </section>
         )}
-
-        <p className="text-center text-sm text-gray-500">
-          <Link href="/" className="text-blue-800 underline">
-            แจ้งเรื่องใหม่
-          </Link>
-          {" · "}
-          <Link href="/lost-found" className="text-blue-800 underline">
-            กระดานของหาย
-          </Link>
-        </p>
       </main>
     </div>
   );
