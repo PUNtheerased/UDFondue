@@ -70,6 +70,9 @@ export type TicketPublic = {
   urgency?: string;
   trackToken?: string;
   lineId?: string;
+  contactOptional?: string;
+  gpsLat?: string;
+  gpsLng?: string;
   statusUpdated?: string;
   statusHistory?: Array<{ status: string; at: string; note?: string; by?: string }>;
   isPublicSummary?: boolean;

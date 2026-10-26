@@ -74,6 +74,9 @@ export function rowToPublic(row: TicketRow, opts?: { includeSecrets?: boolean })
     out.trackToken = row.track_token;
     out.adminNote = row.admin_note;
     out.studentNote = row.student_note;
+    out.contactOptional = row.contact_optional || undefined;
+    out.gpsLat = row.gps_lat || undefined;
+    out.gpsLng = row.gps_lng || undefined;
   }
   return out;
 }

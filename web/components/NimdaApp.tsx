@@ -16,6 +16,7 @@ type Report = {
   studentNo?: string;
   building?: string;
   zone?: string;
+  locationNote?: string;
   date?: string;
   time?: string;
   upvoteCount?: number;
@@ -23,14 +24,40 @@ type Report = {
   studentNote?: string;
   lfSecretDetail?: string;
   lfType?: string;
+  lfWhen?: string;
+  lfReturnPoint?: string;
   isAnonymous?: boolean;
   imageUrl?: string;
   afterImageUrl?: string;
   mergedToId?: string;
   assignedTo?: string;
+  assignedGroup?: string;
   urgency?: string;
+  lineId?: string;
+  contactOptional?: string;
+  gpsLat?: string;
+  gpsLng?: string;
+  statusUpdated?: string;
+  statusHistory?: Array<{ status: string; at: string; note?: string; by?: string }>;
   handoff?: { status?: string } | null;
 };
+
+function DetailRow({ label, value }: { label: string; value?: string | number | null }) {
+  const text = value === undefined || value === null || String(value).trim() === "" ? "—" : String(value);
+  return (
+    <div className="grid grid-cols-[7.5rem_1fr] gap-2 text-sm py-1 border-b border-slate-100 last:border-0">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="text-slate-900 break-words whitespace-pre-wrap">{text}</dd>
+    </div>
+  );
+}
+
+function imageList(raw?: string) {
+  return String(raw || "")
+    .split("\n")
+    .map((u) => u.trim())
+    .filter((u) => u.startsWith("http"));
+}
 
 const KANBAN = ["รับเรื่องแล้ว", "กำลังดำเนินการ", "รอข้อมูลเพิ่ม", "เสร็จสิ้น"];
 const KANBAN_OTHER = "อื่นๆ";
@@ -621,11 +648,19 @@ export function NimdaApp() {
                   <span className="text-xs bg-blue-50 text-blue-800 px-2 py-0.5 rounded-full">{r.status}</span>
                 </div>
                 <p className="text-sm text-gray-600 line-clamp-2 mt-1">{r.detail}</p>
-                <p className="text-xs text-gray-400 mt-2">
-                  {r.submitId} · +{r.upvoteCount || 0} · {r.building}/{r.zone}
+                <p className="text-xs text-gray-500 mt-2">
+                  {r.isAnonymous ? "ไม่ระบุตัวตน" : r.name || "ไม่ระบุชื่อ"}
+                  {r.room ? ` · ห้อง ${r.room}` : ""}
+                  {r.studentNo ? ` เลขที่ ${r.studentNo}` : ""}
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  {r.submitId}
+                  {r.date || r.time ? ` · ${[r.date, r.time].filter(Boolean).join(" ")}` : ""}
+                  {r.building || r.zone ? ` · ${[r.building, r.zone].filter(Boolean).join("/")}` : ""}
                   {r.urgency === "เร่งด่วน" ? " · เร่งด่วน" : ""}
                   {r.assignedTo === "janitor" ? " · ดำเนินการต่อแล้ว" : ""}
                   {r.handoff?.status ? ` · เคลม:${r.handoff.status}` : ""}
+                  {` · +${r.upvoteCount || 0}`}
                 </p>
               </button>
             ))}
@@ -653,8 +688,14 @@ export function NimdaApp() {
                         className="w-full text-left bg-white rounded-xl p-3 shadow-sm"
                       >
                         <p className="text-sm font-semibold line-clamp-2">{r.detail}</p>
-                        <p className="text-xs text-gray-400 mt-1">
-                          {col === KANBAN_OTHER ? `${r.status} · ` : ""}+{r.upvoteCount || 0}
+                        <p className="text-xs text-gray-500 mt-1">
+                          {r.isAnonymous ? "ไม่ระบุตัวตน" : r.name || "ไม่ระบุชื่อ"}
+                          {r.room ? ` · ${r.room}` : ""}
+                        </p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {col === KANBAN_OTHER ? `${r.status} · ` : ""}
+                          {[r.date, r.building].filter(Boolean).join(" · ")}
+                          {` · +${r.upvoteCount || 0}`}
                         </p>
                       </button>
                     ))}
@@ -669,14 +710,138 @@ export function NimdaApp() {
         <div className="fixed inset-0 z-50 flex items-end sm:items-center sm:justify-center sm:p-6">
           <button type="button" className="absolute inset-0 bg-black/50" onClick={() => setSelected(null)} />
           <div className="relative z-10 w-full sm:max-w-xl bg-white rounded-t-3xl sm:rounded-3xl max-h-[92vh] overflow-y-auto p-5 space-y-3">
-            <h3 className="font-bold text-lg">{selected.submitId}</h3>
-            <p className="text-sm whitespace-pre-wrap">{selected.detail}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="font-bold text-lg font-mono">{selected.submitId}</h3>
+                <p className="text-sm text-slate-600 mt-0.5">{selected.category}</p>
+              </div>
+              <span className="text-xs bg-blue-50 text-blue-800 px-2 py-1 rounded-full shrink-0">
+                {selected.status}
+              </span>
+            </div>
+
+            <section className="rounded-2xl border bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold text-slate-500 mb-1">ใครส่ง</p>
+              <dl>
+                <DetailRow
+                  label="ชื่อ"
+                  value={selected.isAnonymous ? "ไม่ประสงค์ออกนาม" : selected.name}
+                />
+                <DetailRow label="ห้อง" value={selected.isAnonymous ? "" : selected.room} />
+                <DetailRow label="เลขที่" value={selected.isAnonymous ? "" : selected.studentNo} />
+                <DetailRow label="LINE ID" value={selected.lineId} />
+                <DetailRow label="ติดต่อเสริม" value={selected.contactOptional} />
+                <DetailRow
+                  label="โหมด"
+                  value={selected.isAnonymous ? "ไม่ระบุตัวตน" : "ระบุตัวตน"}
+                />
+              </dl>
+            </section>
+
+            <section className="rounded-2xl border bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold text-slate-500 mb-1">เมื่อไหร่</p>
+              <dl>
+                <DetailRow
+                  label="วันที่ส่ง"
+                  value={[selected.date, selected.time].filter(Boolean).join(" ")}
+                />
+                <DetailRow label="อัปเดตล่าสุด" value={selected.statusUpdated} />
+                <DetailRow label="ความเร่งด่วน" value={selected.urgency || "ปกติ"} />
+              </dl>
+            </section>
+
+            <section className="rounded-2xl border bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold text-slate-500 mb-1">ที่ไหน</p>
+              <dl>
+                <DetailRow label="อาคาร" value={selected.building} />
+                <DetailRow label="ชั้น/โซน" value={selected.zone} />
+                <DetailRow label="จุดสังเกต" value={selected.locationNote} />
+                <DetailRow
+                  label="พิกัด"
+                  value={
+                    selected.gpsLat && selected.gpsLng
+                      ? `${selected.gpsLat}, ${selected.gpsLng}`
+                      : ""
+                  }
+                />
+              </dl>
+              {selected.gpsLat && selected.gpsLng && (
+                <a
+                  className="inline-block mt-2 text-sm text-blue-800 font-semibold"
+                  href={`https://www.google.com/maps?q=${encodeURIComponent(`${selected.gpsLat},${selected.gpsLng}`)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  เปิดแผนที่ →
+                </a>
+              )}
+            </section>
+
+            <section className="rounded-2xl border px-3 py-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-500">รายละเอียดเรื่อง</p>
+              <p className="text-sm whitespace-pre-wrap">{selected.detail}</p>
+              {(selected.lfType || selected.lfWhen || selected.lfReturnPoint) && (
+                <dl className="pt-1">
+                  <DetailRow label="ประเภทของหาย" value={selected.lfType} />
+                  <DetailRow label="เมื่อไร" value={selected.lfWhen} />
+                  <DetailRow label="จุดรับคืน" value={selected.lfReturnPoint} />
+                </dl>
+              )}
+            </section>
+
+            {imageList(selected.imageUrl).length > 0 && (
+              <section>
+                <p className="text-xs font-semibold text-slate-500 mb-2">รูปที่แนบมา</p>
+                <div className="flex flex-wrap gap-2">
+                  {imageList(selected.imageUrl).map((u) => (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <a key={u} href={u} target="_blank" rel="noreferrer">
+                      <img src={u} alt="" className="w-24 h-24 object-cover rounded-xl border" />
+                    </a>
+                  ))}
+                </div>
+              </section>
+            )}
+
             {selected.lfSecretDetail && (
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm">
                 <p className="font-semibold text-amber-900">ข้อมูลลับยืนยันเจ้าของ</p>
-                <p>{selected.lfSecretDetail}</p>
+                <p className="mt-1 whitespace-pre-wrap">{selected.lfSecretDetail}</p>
               </div>
             )}
+
+            <section className="rounded-2xl border bg-slate-50 px-3 py-2">
+              <p className="text-xs font-semibold text-slate-500 mb-1">งานภายใน</p>
+              <dl>
+                <DetailRow label="กลุ่มรับเรื่อง" value={selected.assignedGroup} />
+                <DetailRow
+                  label="มอบหมาย"
+                  value={selected.assignedTo === "janitor" ? "ดำเนินการต่อ (ป้อมยาม)" : selected.assignedTo}
+                />
+                <DetailRow label="รวมเข้าเคส" value={selected.mergedToId} />
+                <DetailRow label="คะแนนโหวต" value={selected.upvoteCount ?? 0} />
+                <DetailRow label="สถานะเคลม" value={selected.handoff?.status} />
+              </dl>
+            </section>
+
+            {selected.statusHistory && selected.statusHistory.length > 0 && (
+              <section className="rounded-2xl border px-3 py-3">
+                <p className="text-xs font-semibold text-slate-500 mb-2">ประวัติสถานะ</p>
+                <ul className="space-y-2">
+                  {selected.statusHistory.map((h, i) => (
+                    <li key={`${h.at}-${i}`} className="text-sm border-l-2 border-blue-200 pl-3">
+                      <p className="font-medium">{h.status}</p>
+                      <p className="text-xs text-slate-500">
+                        {h.at ? new Date(h.at).toLocaleString("th-TH") : ""}
+                        {h.by ? ` · ${h.by}` : ""}
+                      </p>
+                      {h.note && <p className="text-xs text-slate-600 mt-0.5">{h.note}</p>}
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
             <select
               className="w-full border rounded-xl px-3 py-2"
               value={editStatus}
