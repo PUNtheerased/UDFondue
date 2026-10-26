@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  BUILDING_GROUPS,
   CATEGORIES,
   floorsForBuilding,
   isMainClassroomBuilding,
@@ -13,6 +12,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { compressImageForUpload } from "@/lib/compressImage";
 import { rememberTrackId } from "@/lib/recentTracks";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
+import { BuildingPicker } from "@/components/BuildingPicker";
 import { TurnstileWidget, type TurnstileHandle } from "@/components/Turnstile";
 import { allowLocalLineBypass } from "@/lib/runtime";
 
@@ -625,28 +625,105 @@ export function ReportForm() {
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
         <h1 className="text-2xl font-bold">UDFondue</h1>
         <p className="text-sm text-blue-100 mt-1">แจ้งปัญหา ของหาย หรือความคิดเห็นได้ที่นี่</p>
-        <div className="mt-4 flex justify-center gap-2 text-xs">
-          {[1, 2, 3].map((n) => {
-            const reachable = n <= step;
+        <nav className="mt-5 flex items-stretch justify-center gap-1 sm:gap-2" aria-label="ขั้นตอนกรอกฟอร์ม">
+          {(
+            [
+              {
+                n: 1,
+                label: "ประเภท",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M4 7h16M4 12h10M4 17h7"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                )
+              },
+              {
+                n: 2,
+                label: "สถานที่",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M12 21s7-5.2 7-11a7 7 0 1 0-14 0c0 5.8 7 11 7 11Z"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                    />
+                    <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.8" />
+                  </svg>
+                )
+              },
+              {
+                n: 3,
+                label: "ยืนยัน",
+                icon: (
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <path
+                      d="M8 11V8a4 4 0 1 1 8 0v3"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                    <rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                  </svg>
+                )
+              }
+            ] as const
+          ).map((item, idx, arr) => {
+            const reachable = item.n <= step;
+            const active = step === item.n;
+            const done = item.n < step;
             return (
-              <button
-                key={n}
-                type="button"
-                disabled={!reachable}
-                onClick={() => reachable && setStep(n)}
-                className={`px-3 py-1 rounded-full transition ${
-                  step === n
-                    ? "bg-white text-blue-900"
-                    : reachable
-                      ? "bg-white/25 text-white"
-                      : "bg-white/10 text-white/50"
-                }`}
-              >
-                ขั้นตอนที่ {n}/3
-              </button>
+              <div key={item.n} className="flex items-center gap-1 sm:gap-2">
+                <button
+                  type="button"
+                  disabled={!reachable}
+                  onClick={() => reachable && setStep(item.n)}
+                  className={`flex flex-col items-center gap-1 min-w-[4.5rem] sm:min-w-[5.25rem] px-2 py-2 rounded-2xl transition ${
+                    active
+                      ? "bg-white text-blue-900 shadow-sm"
+                      : reachable
+                        ? "bg-white/20 text-white hover:bg-white/30"
+                        : "bg-white/10 text-white/45"
+                  }`}
+                  aria-current={active ? "step" : undefined}
+                >
+                  <span
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl ${
+                      active ? "bg-blue-100 text-blue-900" : done ? "bg-white/25" : "bg-black/10"
+                    }`}
+                  >
+                    {done && !active ? (
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                        <path
+                          d="M5 12l5 5L20 7"
+                          stroke="currentColor"
+                          strokeWidth="2.2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      item.icon
+                    )}
+                  </span>
+                  <span className="text-[11px] sm:text-xs font-semibold leading-none">{item.label}</span>
+                </button>
+                {idx < arr.length - 1 && (
+                  <span
+                    className={`w-3 sm:w-5 h-0.5 rounded-full self-center mb-4 ${
+                      item.n < step ? "bg-white/70" : "bg-white/25"
+                    }`}
+                    aria-hidden
+                  />
+                )}
+              </div>
             );
           })}
-        </div>
+        </nav>
       </header>
 
       <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-5 space-y-4">
@@ -711,11 +788,9 @@ export function ReportForm() {
                 <option value="เร่งด่วน">เร่งด่วน (เช่น น้ำรั่ว ไฟตก)</option>
               </select>
             )}
-            <select
-              className="w-full border rounded-xl px-3 py-2"
+            <BuildingPicker
               value={building}
-              onChange={(e) => {
-                const next = e.target.value;
+              onChange={(next) => {
                 setBuilding(next);
                 setLocationNote("");
                 // นอกอาคาร 1–5 ใช้ชั้นเป็น "อื่นๆ" ทันที
@@ -725,18 +800,7 @@ export function ReportForm() {
                   setZone("");
                 }
               }}
-            >
-              <option value="">เลือกสถานที่</option>
-              {BUILDING_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.buildings.map((b) => (
-                    <option key={b} value={b}>
-                      {b}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
+            />
             {building && isMainBuilding ? (
               <div className="flex gap-2">
                 <select
