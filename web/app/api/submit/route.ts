@@ -57,14 +57,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rawImageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.map(String) : [];
+    const rawImageUrls: string[] = Array.isArray(body.imageUrls)
+      ? body.imageUrls.map((v: unknown) => String(v))
+      : [];
     const supabaseBase = String(process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
     const allowPrefix = supabaseBase
       ? `${supabaseBase}/storage/v1/object/public/udfondue-images/`
       : "";
     const imageUrls = rawImageUrls
-      .map((u) => u.trim())
-      .filter((u) => {
+      .map((u: string) => u.trim())
+      .filter((u: string) => {
         if (!u || u.startsWith("blob:") || u.startsWith("data:")) return false;
         if (!allowPrefix) return false;
         return u.startsWith(allowPrefix);
