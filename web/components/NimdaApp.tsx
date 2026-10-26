@@ -489,7 +489,7 @@ export function NimdaApp() {
             <button type="button" className="px-3 py-1.5 rounded-lg text-sm bg-white/20" onClick={exportCsv}>
               Export CSV
             </button>
-            <button type="button" className="px-3 py-1.5 rounded-lg text-sm bg-white/20" onClick={load}>
+            <button type="button" className="px-3 py-1.5 rounded-lg text-sm bg-white/20" onClick={() => load()}>
               รีเฟรช
             </button>
           </div>
@@ -540,7 +540,7 @@ export function NimdaApp() {
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && load()}
             />
-            <button type="button" className="bg-blue-800 text-white px-4 py-2 rounded-xl" onClick={load}>
+            <button type="button" className="bg-blue-800 text-white px-4 py-2 rounded-xl" onClick={() => load()}>
               ค้นหา
             </button>
           </div>
