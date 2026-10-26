@@ -43,14 +43,33 @@ export async function POST(req: NextRequest) {
 
     if (body.clearSheet) {
       try {
-        const gasToken = session.startsWith("gas:") ? session.slice(4) : "";
-        await callGas({
-          action: "adminPurgeSheet",
-          adminToken: gasToken || undefined,
-          trustedNext: true,
-          confirm
-        });
-        cleared.push("sheet");
+        const pin = process.env.ADMIN_PIN || "";
+        if (!pin) {
+          warnings.push("ล้างชีตไม่ได้: ไม่มี ADMIN_PIN ใน env");
+        } else {
+          const auth = await callGas<{
+            status: string;
+            adminToken?: string;
+            message?: string;
+          }>({
+            action: "adminAuth",
+            password: pin
+          });
+          if (auth.status !== "success" || !auth.adminToken) {
+            warnings.push(
+              auth.message
+                ? `ล้างชีตไม่ได้: ${auth.message}`
+                : "ล้างชีตไม่ได้: ได้ adminToken จาก GAS ไม่สำเร็จ"
+            );
+          } else {
+            await callGas({
+              action: "adminPurgeSheet",
+              adminToken: auth.adminToken,
+              confirm
+            });
+            cleared.push("sheet");
+          }
+        }
       } catch (err) {
         console.error("purge sheet", err);
         warnings.push(

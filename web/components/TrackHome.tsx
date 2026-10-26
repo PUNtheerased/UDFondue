@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { loadRecentTracks, normalizeSubmitIdInput, rememberTrackId } from "@/lib/recentTracks";
@@ -17,6 +17,30 @@ type MyTicket = {
   trackToken?: string;
 };
 
+const CACHE_KEY = "udf_track_mine_v1";
+
+function readCache(): { lineId: string; displayName: string } | null {
+  try {
+    const raw = sessionStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { lineId?: string; displayName?: string };
+    if (parsed.lineId) {
+      return { lineId: parsed.lineId, displayName: parsed.displayName || "" };
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+function writeCache(lineId: string, displayName: string) {
+  try {
+    sessionStorage.setItem(CACHE_KEY, JSON.stringify({ lineId, displayName }));
+  } catch {
+    /* ignore */
+  }
+}
+
 export function TrackHome() {
   const router = useRouter();
   const [tab, setTab] = useState<"search" | "mine">("search");
@@ -25,83 +49,129 @@ export function TrackHome() {
   const [loading, setLoading] = useState(false);
   const [lineId, setLineId] = useState("");
   const [displayName, setDisplayName] = useState("");
+  const [bootDone, setBootDone] = useState(false);
+  const [needRelogin, setNeedRelogin] = useState(false);
   const [mine, setMine] = useState<MyTicket[]>([]);
   const [mineLoading, setMineLoading] = useState(false);
   const [mineError, setMineError] = useState("");
   const [loginBusy, setLoginBusy] = useState(false);
   const [recent, setRecent] = useState<string[]>([]);
 
-  useEffect(() => {
-    setRecent(loadRecentTracks());
+  const loadMine = useCallback(async (opts?: { idToken?: string }) => {
+    setMineLoading(true);
+    setMineError("");
+    try {
+      const idToken = opts?.idToken || (await getClientIdToken());
+      if (!idToken) {
+        setNeedRelogin(true);
+        setMineError("เข้าสู่ระบบ LINE ไม่ครบ (ต้องเปิด scope openid) — กดเข้าสู่ระบบใหม่");
+        setMine([]);
+        return;
+      }
+      setNeedRelogin(false);
+      const res = await fetch("/api/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "trackList",
+          idToken
+        })
+      });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "โหลดไม่สำเร็จ");
+      setMine(data.reports || []);
+    } catch (err) {
+      setMineError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
+    } finally {
+      setMineLoading(false);
+    }
   }, []);
 
   useEffect(() => {
+    setRecent(loadRecentTracks());
+    const cached = readCache();
+    if (cached) {
+      setLineId(cached.lineId);
+      setDisplayName(cached.displayName);
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
     async function boot() {
       if (typeof window !== "undefined") {
         const q = new URLSearchParams(window.location.search);
-        if (q.get("tab") === "mine") setTab("mine");
+        if (q.get("tab") === "mine" || q.has("liffClientId") || q.has("code")) {
+          setTab("mine");
+        }
       }
+
       const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
       const ready = await ensureLiff(liffId);
+      if (cancelled) return;
+
       if (ready.bypass) {
         setLineId("U-TEST-USER-ID");
         setDisplayName("ผู้ใช้งานจำลอง");
+        writeCache("U-TEST-USER-ID", "ผู้ใช้งานจำลอง");
+        setBootDone(true);
         return;
       }
-      if (!ready.ok || !ready.liff) return;
+
+      if (!ready.ok || !ready.liff) {
+        setMineError(ready.message || "");
+        setBootDone(true);
+        return;
+      }
+
+      const liff = ready.liff;
       try {
-        if (!ready.liff.isLoggedIn()) return;
-        const profile = await ready.liff.getProfile();
+        if (!liff.isLoggedIn()) {
+          // ในแอป LINE — login อัตโนมัติครั้งเดียว ไม่บังคับกดปุ่ม
+          if (liff.isInClient?.()) {
+            const redirectUri = `${window.location.origin}/track?tab=mine`;
+            liff.login({ redirectUri });
+            return;
+          }
+          setBootDone(true);
+          return;
+        }
+
+        const [profile, idToken] = await Promise.all([
+          liff.getProfile(),
+          Promise.resolve(liff.getIDToken?.() || "")
+        ]);
+        if (cancelled) return;
+
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
-        // กลับจาก LINE login → เปิดแท็บเรื่องของฉัน
-        if (typeof window !== "undefined") {
-          const q = new URLSearchParams(window.location.search);
-          if (q.get("tab") === "mine" || q.has("liffClientId") || q.has("code")) {
-            setTab("mine");
-          }
+        writeCache(profile.userId, profile.displayName);
+
+        const q = new URLSearchParams(window.location.search);
+        if (q.get("tab") === "mine" || q.has("liffClientId") || q.has("code")) {
+          setTab("mine");
+        }
+
+        if (!idToken) {
+          setNeedRelogin(true);
+          setMineError("เข้าสู่ระบบ LINE ไม่ครบ (ต้องเปิด scope openid) — กดเข้าสู่ระบบใหม่");
         }
       } catch {
-        // เปิดนอก LINE ได้
+        /* เปิดนอก LINE ได้ */
+      } finally {
+        if (!cancelled) setBootDone(true);
       }
     }
     boot();
-  }, []);
-
-  useEffect(() => {
-    if (tab !== "mine" || !lineId) return;
-    let cancelled = false;
-    async function loadMine() {
-      setMineLoading(true);
-      setMineError("");
-      try {
-        const idToken = await getClientIdToken();
-        const res = await fetch("/api/track", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            action: "trackList",
-            idToken: idToken || undefined,
-            lineId: idToken ? undefined : lineId
-          })
-        });
-        const data = await res.json();
-        if (cancelled) return;
-        if (data.status !== "success") throw new Error(data.message || "โหลดไม่สำเร็จ");
-        setMine(data.reports || []);
-      } catch (err) {
-        if (!cancelled) {
-          setMineError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
-        }
-      } finally {
-        if (!cancelled) setMineLoading(false);
-      }
-    }
-    loadMine();
     return () => {
       cancelled = true;
     };
-  }, [tab, lineId]);
+  }, []);
+
+  useEffect(() => {
+    if (!bootDone || tab !== "mine" || !lineId || needRelogin) return;
+    loadMine();
+  }, [bootDone, tab, lineId, needRelogin, loadMine]);
 
   async function goLookup(raw: string) {
     setError("");
@@ -153,6 +223,7 @@ export function TrackHome() {
       if (ready.bypass) {
         setLineId("U-TEST-USER-ID");
         setDisplayName("ผู้ใช้งานจำลอง");
+        writeCache("U-TEST-USER-ID", "ผู้ใช้งานจำลอง");
         setTab("mine");
         return;
       }
@@ -162,17 +233,21 @@ export function TrackHome() {
       }
       if (ready.liff.isLoggedIn()) {
         const profile = await ready.liff.getProfile();
+        const idToken = ready.liff.getIDToken?.() || "";
         setLineId(profile.userId);
         setDisplayName(profile.displayName);
+        writeCache(profile.userId, profile.displayName);
         setTab("mine");
+        if (!idToken) {
+          setNeedRelogin(true);
+          setMineError("ยังไม่ได้สิทธิ์ openid — ตรวจ LIFF scope แล้วลองใหม่");
+        } else {
+          await loadMine({ idToken });
+        }
         return;
       }
-      // กลับมาแท็บเรื่องของฉันหลังล็อกอิน
-      const redirectUri =
-        typeof window !== "undefined"
-          ? `${window.location.origin}/track?tab=mine`
-          : undefined;
-      ready.liff.login(redirectUri ? { redirectUri } : undefined);
+      const redirectUri = `${window.location.origin}/track?tab=mine`;
+      ready.liff.login({ redirectUri });
     } catch (err) {
       setMineError(err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ");
     } finally {
@@ -256,30 +331,39 @@ export function TrackHome() {
 
         {tab === "mine" && (
           <section className="bg-white rounded-2xl p-5 space-y-3">
-            {!lineId ? (
+            {!bootDone && !lineId ? (
+              <p className="text-center text-gray-400 py-8">กำลังเชื่อมต่อ LINE...</p>
+            ) : !lineId || needRelogin ? (
               <div className="text-center space-y-3 py-4">
-                <p className="text-sm text-gray-600">เข้าสู่ระบบด้วย LINE เพื่อดูรายการที่แจ้งไว้</p>
+                <p className="text-sm text-gray-600">
+                  {needRelogin
+                    ? "ต้องเข้าสู่ระบบใหม่เพื่อดูเรื่องของตัวเอง"
+                    : "เข้าสู่ระบบด้วย LINE เพื่อดูรายการที่แจ้งไว้"}
+                </p>
                 <button
                   type="button"
                   onClick={loginLine}
                   disabled={loginBusy}
                   className="w-full bg-green-600 text-white py-3 rounded-xl font-semibold disabled:opacity-60"
                 >
-                  {loginBusy ? "กำลังเปิด LINE..." : "เข้าสู่ระบบ LINE"}
+                  {loginBusy ? "กำลังเปิด LINE..." : needRelogin ? "เข้าสู่ระบบใหม่" : "เข้าสู่ระบบ LINE"}
                 </button>
                 {mineError && <p className="text-sm text-red-600">{mineError}</p>}
                 <p className="text-xs text-gray-400">
-                  ถ้ากดแล้วไม่ไปต่อ ลองเปิดหน้านี้จากในแอป LINE โดยตรง
+                  แนะนำเปิดจากในแอป LINE (ลิงก์ LIFF) เพื่อไม่ต้องล็อกอินซ้ำ
                 </p>
               </div>
             ) : (
               <>
                 <p className="text-sm text-gray-500">
-                  ผู้ใช้: {displayName || "LINE"} · {mine.length} รายการ
+                  ผู้ใช้: {displayName || "LINE"}
+                  {!mineLoading ? ` · ${mine.length} รายการ` : ""}
                 </p>
-                {mineLoading && <p className="text-center text-gray-400 py-6">กำลังโหลด...</p>}
+                {mineLoading && (
+                  <p className="text-center text-gray-400 py-6">กำลังโหลดเรื่องของฉัน...</p>
+                )}
                 {mineError && <p className="text-sm text-red-600">{mineError}</p>}
-                {!mineLoading && mine.length === 0 && (
+                {!mineLoading && mine.length === 0 && !mineError && (
                   <p className="text-center text-gray-400 py-8">ยังไม่มีเรื่องที่แจ้งไว้</p>
                 )}
                 <div className="space-y-2">

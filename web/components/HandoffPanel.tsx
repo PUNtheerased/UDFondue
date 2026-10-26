@@ -90,7 +90,7 @@ export function HandoffPanel({
         </div>
       )}
 
-      {(!handoff || handoff.canCreateCode || handoff.isHolder) && lfType === "แจ้งพบของหาย" && (
+      {handoff?.canCreateCode && (
         <button
           type="button"
           disabled={busy}
@@ -101,7 +101,7 @@ export function HandoffPanel({
         </button>
       )}
 
-      {(handoff?.canConfirm || handoff?.isClaimant) && (
+      {handoff?.canConfirm && (
         <div className="flex gap-2">
           <input
             className="flex-1 border rounded-xl px-3 py-2 font-mono tracking-widest text-center"

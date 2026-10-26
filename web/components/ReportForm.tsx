@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   BUILDING_GROUPS,
   CATEGORIES,
@@ -13,7 +13,7 @@ import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { compressImageForUpload } from "@/lib/compressImage";
 import { rememberTrackId } from "@/lib/recentTracks";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
-import { TurnstileWidget } from "@/components/Turnstile";
+import { TurnstileWidget, type TurnstileHandle } from "@/components/Turnstile";
 import { allowLocalLineBypass } from "@/lib/runtime";
 
 declare global {
@@ -84,6 +84,7 @@ export function ReportForm() {
   const [lineId, setLineId] = useState("");
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef<TurnstileHandle>(null);
   const [zoneIssues, setZoneIssues] = useState<ZoneIssue[]>([]);
   const [upvotedIds, setUpvotedIds] = useState<Record<string, true>>({});
   const [upvoteBusyId, setUpvoteBusyId] = useState("");
@@ -498,6 +499,8 @@ export function ReportForm() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "ส่งไม่สำเร็จ");
+      setTurnstileToken("");
+      turnstileRef.current?.reset();
     } finally {
       setLoading(false);
     }
@@ -951,7 +954,7 @@ export function ReportForm() {
               </div>
             </div>
 
-            <TurnstileWidget onToken={setTurnstileToken} />
+            <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
 
             <div className="flex gap-2 pb-4">
               <button type="button" className="flex-1 border py-3 rounded-xl" onClick={() => setStep(2)}>

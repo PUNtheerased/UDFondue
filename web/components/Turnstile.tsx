@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 
 declare global {
   interface Window {
@@ -15,29 +15,51 @@ type Props = {
   onToken: (token: string) => void;
 };
 
-export function TurnstileWidget({ onToken }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
+export type TurnstileHandle = {
+  reset: () => void;
+};
+
+export const TurnstileWidget = forwardRef<TurnstileHandle, Props>(function TurnstileWidget(
+  { onToken },
+  ref
+) {
+  const elRef = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
+  const onTokenRef = useRef(onToken);
+  onTokenRef.current = onToken;
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
   const allowDevBypass = process.env.NODE_ENV !== "production" && !siteKey;
 
+  useImperativeHandle(ref, () => ({
+    reset: () => {
+      onTokenRef.current("");
+      if (allowDevBypass) {
+        onTokenRef.current("dev-bypass");
+        return;
+      }
+      if (widgetId.current && window.turnstile) {
+        window.turnstile.reset(widgetId.current);
+      }
+    }
+  }));
+
   useEffect(() => {
     if (allowDevBypass) {
-      onToken("dev-bypass");
+      onTokenRef.current("dev-bypass");
       return;
     }
     if (!siteKey) {
-      onToken("");
+      onTokenRef.current("");
       return;
     }
 
     let cancelled = false;
     const tryRender = () => {
-      if (cancelled || !ref.current || !window.turnstile || widgetId.current) return;
-      widgetId.current = window.turnstile.render(ref.current, {
+      if (cancelled || !elRef.current || !window.turnstile || widgetId.current) return;
+      widgetId.current = window.turnstile.render(elRef.current, {
         sitekey: siteKey,
-        callback: (token: string) => onToken(token),
-        "expired-callback": () => onToken(""),
+        callback: (token: string) => onTokenRef.current(token),
+        "expired-callback": () => onTokenRef.current(""),
         theme: "light"
       });
     };
@@ -48,7 +70,7 @@ export function TurnstileWidget({ onToken }: Props) {
       cancelled = true;
       clearInterval(t);
     };
-  }, [siteKey, allowDevBypass, onToken]);
+  }, [siteKey, allowDevBypass]);
 
   if (allowDevBypass) {
     return (
@@ -66,5 +88,5 @@ export function TurnstileWidget({ onToken }: Props) {
     );
   }
 
-  return <div ref={ref} className="flex justify-center" />;
-}
+  return <div ref={elRef} className="flex justify-center" />;
+});

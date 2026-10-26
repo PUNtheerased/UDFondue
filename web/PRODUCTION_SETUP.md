@@ -41,7 +41,8 @@
 3. รัน SQL ใน `web/supabase/tickets-schema.sql` (โปรเจกต์ใหม่)  
    **หรือ** ถ้ารัน schema เก่าแล้ว ให้รันเพิ่ม `web/supabase/audit-hardening.sql`  
    (ปิด SELECT เต็มแถวบน `tickets` + view `tickets_public` + unique handoff active)
-4. ใส่ `SUPABASE_SERVICE_ROLE` บน Vercel แล้ว Redeploy
+4. รัน `web/supabase/upvote-rpc.sql` (atomic upvote)
+5. ใส่ `SUPABASE_SERVICE_ROLE` บน Vercel แล้ว Redeploy
 
 ## 3) Google Apps Script
 
@@ -50,7 +51,7 @@
 3. Script Properties (Project Settings → Script properties):
    - **`GAS_API_KEY`** = ค่าเดียวกับ Vercel `GAS_API_KEY` (บังคับ — ไม่มีแล้วเรียก GAS ไม่ได้)
    - **`ADMIN_PASSWORD`** = รหัสแอดมิน (ย้ายออกจากโค้ดแล้ว · ให้ตรง `ADMIN_PIN` บน Vercel)
-   - **`LINE_CHANNEL_ACCESS_TOKEN`** = Channel access token (กลุ่ม / สำรอง)
+   - **`LINE_CHANNEL_ACCESS_TOKEN`** = Channel access token (**จำเป็นสำหรับ push ไปกลุ่ม** จาก GAS)
    - (ถ้าใช้กลุ่ม) `GROUP_ID_FACILITY`, `GROUP_ID_LOST_FOUND`, `GROUP_ID_COUNCIL`, `GROUP_ID_GENERAL`
 4. รัน `authorizeLinePush` หรือ `testLinePush` ใน Editor ครั้งหนึ่ง แล้ว Deploy New version อีกครั้ง
 5. ถ้า URL Web App เคยเปิดสาธารณะนาน — พิจารณา Deploy ใหม่แล้วอัปเดต URL
@@ -59,10 +60,15 @@
 
 | LIFF | Endpoint แนะนำ |
 | --- | --- |
-| แจ้งเรื่อง | `https://ud-fondue.vercel.app/` |
-| ติดตาม | `https://ud-fondue.vercel.app/track` |
+| แจ้งเรื่อง (REPORT) | `https://ud-fondue.vercel.app/` |
+| ติดตาม (TRACK) | `https://ud-fondue.vercel.app/track` |
+| ของหาย (ใช้ LIFF TRACK เดียวกัน) | เพิ่ม Endpoint `/lost-found` ใน LIFF TRACK หรือเปิดผ่าน `https://liff.line.me/<LIFF_ID_TRACK>` แล้วนำทางไป `/lost-found` |
 
-Scope ที่ต้องเปิด: **profile** + **openid** (จำเป็นสำหรับ `getIDToken`)
+Scope ที่ต้องเปิดทั้งสองแอป: **profile** + **openid** (จำเป็นสำหรับ `getIDToken` — ไม่มี openid แล้ว track/claim ใช้ไม่ได้)
+
+**Session ค้างในแอป LINE:** ให้นักเรียนเปิดหน้าติดตามผ่าน  
+`https://liff.line.me/<NEXT_PUBLIC_LIFF_ID_TRACK>`  
+ไม่ใช่แค่เปิดโดเมนเว็บในเบราว์เซอร์ภายนอก (นอก LINE ต้อง OAuth ใหม่ตามปกติของ LINE)
 
 ## 5) หน้าสำคัญ
 
@@ -74,16 +80,26 @@ Scope ที่ต้องเปิด: **profile** + **openid** (จำเป�
 | กระดานของหาย | `/lost-found` |
 | เจ้าหน้าที่ | `/nimda` |
 
-## 6) ตรวจก่อนเปิดใช้จริง (หลัง audit harden)
+## 6) เช็กลิสต์ Deploy (หลังแก้บัก Full Bug Check)
 
-- [ ] รัน `audit-hardening.sql` (หรือ schema ใหม่) บน Supabase
+1. รัน SQL: `upvote-rpc.sql` (+ `audit-hardening.sql` ถ้ายังไม่รัน)
+2. วาง `Code.gs` → Deploy **New version** (ตัด `trustedNext` บน purge · history เฉพาะเมื่อ status/note เปลี่ยน)
+3. Vercel → Redeploy Production (env ครบตามตารางด้านบน)
+4. ตรวจ LIFF TRACK มี Endpoint `/track` และ `/lost-found` · scope **openid**
+5. ทดสอบสั้น ๆ: ส่งเรื่อง · track «เรื่องของฉัน» จากใน LINE · เคลมของหาย · โหวต · Nimda PIN · purge Dev (ถ้าใช้)
+
+## 7) ตรวจก่อนเปิดใช้จริง (หลัง audit harden)
+
+- [ ] รัน `audit-hardening.sql` + `upvote-rpc.sql` บน Supabase
 - [ ] ตั้ง `GAS_API_KEY` ทั้ง Vercel + Script Properties แล้ว Deploy New version ของ GAS
 - [ ] ตั้ง `ADMIN_PASSWORD` ใน Script Properties แล้ว **หมุนรหัส** (ของเก่าเคยอยู่ใน repo)
+- [ ] `LINE_CHANNEL_ACCESS_TOKEN` ใน Script Properties (กลุ่มแจ้งเหตุ)
 - [ ] `SUPABASE_SERVICE_ROLE` มีบน Production
 - [ ] เปิดจากแอป LINE แล้วส่งเรื่องทดสอบได้
 - [ ] แนบรูปแล้วขึ้นบน track
 - [ ] มีข้อความ LINE ตอบกลับหลังส่ง
-- [ ] `/nimda` เข้าด้วย LINE allowlist ได้โดยไม่พึ่ง GAS; ทาง PIN ยังใช้ได้
+- [ ] `/nimda` เข้าด้วย LINE allowlist ได้โดยไม่พึ่ง GAS; ทาง PIN ต้องได้ GAS token หรือมี Supabase SoT
 - [ ] `/lost-found` ว่างจริงเมื่อไม่มีรายการ (ไม่โชว์ Sheet เก่า)
-- [ ] เคลมของหายซ้อนไม่ได้; สร้างรหัสใหม่หลังหมดอายุได้
+- [ ] เคลมของหายซ้อนไม่ได้; สร้างรหัสใหม่หลังหมดอายุได้ (ห้ามทับตอน `code_active`)
 - [ ] `/lost-found` ไม่โชว์ข้อมูลลับยืนยันเจ้าของ
+- [ ] เปิด track ผ่าน `liff.line.me/...` แล้วกลับมาแท็บ «เรื่องของฉัน» โดยไม่ต้องกดล็อกอินใหม่

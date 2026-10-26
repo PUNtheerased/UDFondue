@@ -57,8 +57,9 @@ export function NimdaApp() {
   const [purgeConfirm, setPurgeConfirm] = useState("");
   const [purgeSheet, setPurgeSheet] = useState(true);
 
-  const load = useCallback(async () => {
-    setBusy(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = !!opts?.silent;
+    if (!silent) setBusy(true);
     try {
       const res = await fetch("/api/admin/bootstrap", {
         method: "POST",
@@ -71,12 +72,18 @@ export function NimdaApp() {
       if (data.mode === "admin" || data.mode === "dev") setMode(data.mode);
       setAuthed(true);
     } catch (err) {
-      setLoginError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
-      setAuthed(false);
+      if (!silent) {
+        setLoginError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
+        setAuthed(false);
+      }
     } finally {
-      setBusy(false);
+      if (!silent) setBusy(false);
     }
   }, [filterStatus, search]);
+
+  const loadSilent = useCallback(() => {
+    load({ silent: true }).catch(() => {});
+  }, [load]);
 
   async function login() {
     setLoginError("");
@@ -189,8 +196,8 @@ export function NimdaApp() {
     load().catch(() => {});
   }, [load]);
 
-  // ไม่พึ่ง anon Realtime สำหรับเรื่องส่วนตัว — poll ทุก 15 วิ
-  useTicketsRealtime(load, authed, 15000);
+  // ไม่พึ่ง anon Realtime สำหรับเรื่องส่วนตัว — poll ทุก 15 วิ (silent ไม่สลับ busy)
+  useTicketsRealtime(loadSilent, authed, 15000);
 
   useEffect(() => {
     if (view === "site") loadSiteSettings();

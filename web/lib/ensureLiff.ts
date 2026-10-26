@@ -3,6 +3,7 @@ import { allowLocalLineBypass } from "@/lib/runtime";
 type LiffLike = {
   init: (opts: { liffId: string }) => Promise<void>;
   isLoggedIn: () => boolean;
+  isInClient?: () => boolean;
   login: (opts?: { redirectUri?: string }) => void;
   getProfile: () => Promise<{ userId: string; displayName: string }>;
   getIDToken?: () => string | null;
@@ -20,6 +21,36 @@ const cache = new Map<string, Promise<EnsureResult>>();
 function getLiff(): LiffLike | undefined {
   if (typeof window === "undefined") return undefined;
   return (window as unknown as { liff?: LiffLike }).liff;
+}
+
+function waitForLiffSdk(timeoutMs = 8000): Promise<LiffLike | undefined> {
+  const existing = getLiff();
+  if (existing) return Promise.resolve(existing);
+
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const tick = () => {
+      const liff = getLiff();
+      if (liff) {
+        resolve(liff);
+        return;
+      }
+      if (Date.now() - start >= timeoutMs) {
+        resolve(undefined);
+        return;
+      }
+      window.setTimeout(tick, 50);
+    };
+    // ถ้า script โหลดทีหลัง — ฟัง load ของ script tags
+    const scripts = document.querySelectorAll('script[src*="liff"]');
+    scripts.forEach((s) => {
+      s.addEventListener("load", () => {
+        const liff = getLiff();
+        if (liff) resolve(liff);
+      });
+    });
+    tick();
+  });
 }
 
 /** รอ SDK จาก layout แล้ว init ครั้งเดียวต่อ liffId ในแท็บนี้ */
@@ -41,12 +72,7 @@ export async function ensureLiff(liffId: string): Promise<EnsureResult> {
   if (existing) return existing;
 
   const pending = (async (): Promise<EnsureResult> => {
-    for (let i = 0; i < 30; i++) {
-      if (getLiff()) break;
-      await new Promise((r) => setTimeout(r, 100));
-    }
-
-    const liff = getLiff();
+    const liff = await waitForLiffSdk();
     if (!liff) {
       return {
         ok: false,
@@ -60,7 +86,6 @@ export async function ensureLiff(liffId: string): Promise<EnsureResult> {
       return { ok: true, bypass: false, liff };
     } catch (err) {
       const message = err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ";
-      // init ซ้ำหลังสำเร็จมัก error — ถ้า logged in แล้วถือว่าใช้ได้
       if (liff.isLoggedIn?.()) {
         return { ok: true, bypass: false, liff };
       }

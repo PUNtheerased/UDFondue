@@ -4,6 +4,7 @@ import { getAdminLineIds } from "@/lib/env";
 import { verifyLineIdToken } from "@/lib/lineAuth";
 import { callGas } from "@/lib/gas";
 import { rateLimit } from "@/lib/rateLimit";
+import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 
 function setSessionCookies(res: NextResponse, subject: string) {
   res.cookies.set(adminCookieName(), createAdminSessionToken(subject), {
@@ -58,7 +59,7 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
-    // PIN — ยืนยันกับ GAS (Script Property ADMIN_PASSWORD) เมื่อมี GAS
+    // PIN — ต้องได้ adminToken จาก GAS ก่อน; ถ้า GAS ล้มและมี Supabase SoT ค่อยอนุญาต pin:admin
     if (pin && adminPin && pin === adminPin) {
       try {
         const gas = await callGas<{ status: string; adminToken?: string; message?: string }>({
@@ -73,10 +74,18 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("adminAuth gas", err);
       }
-      // GAS ไม่พร้อม แต่ PIN ตรง env — อนุญาต session ฝั่ง Next
-      const res = NextResponse.json({ status: "success", mode: "admin", via: "pin" });
-      setSessionCookies(res, `pin:admin`);
-      return res;
+      if (isTicketsDbReady()) {
+        const res = NextResponse.json({ status: "success", mode: "admin", via: "pin+supabase" });
+        setSessionCookies(res, `pin:admin`);
+        return res;
+      }
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "ล็อกอินด้วย PIN ไม่สำเร็จ — GAS ไม่ตอบและยังไม่มี Supabase เป็นแหล่งข้อมูลหลัก"
+        },
+        { status: 503 }
+      );
     }
 
     return NextResponse.json({ status: "error", message: "รหัสผ่านไม่ถูกต้อง" }, { status: 403 });

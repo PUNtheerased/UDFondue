@@ -428,6 +428,8 @@ function handleMirrorUpdate_(data, timestamp, payloadSize) {
   const status = data.status || DEFAULT_STATUS;
   const updatedAt = formatDateTimeTh_(timestamp);
   const adminNote = data.studentNote || data.adminNote || "";
+  const prevStatus = String(sheet.getRange(row, COL.STATUS).getValue() || "");
+  const prevNote = String(sheet.getRange(row, COL.ADMIN_NOTE).getValue() || "");
   const isPublic =
     data.isPublicShowcase === true ||
     data.isPublicShowcase === "true" ||
@@ -469,7 +471,9 @@ function handleMirrorUpdate_(data, timestamp, payloadSize) {
     sheet.getRange(row, COL.TRACK_TOKEN).setValue(data.trackToken);
   }
 
-  appendStatusHistory_(sheet, row, status, updatedAt, "mirror");
+  if (prevStatus !== String(status) || prevNote !== String(adminNote)) {
+    appendStatusHistory_(sheet, row, status, updatedAt, "mirror");
+  }
 
   try {
     writeLog_(timestamp, payloadSize, "mirrorUpdate", 0, 0, 0, status, "success", submitId);
@@ -1162,12 +1166,9 @@ function buildSubmitConfirmationMessage_(submitId, category, status, trackToken)
   ].join("\n");
 }
 
-/** Dev: ล้างแถวข้อมูลในชีตหลัก (เหลือหัวตาราง) — ต้องผ่าน apiKey แล้ว (doPost) */
+/** Dev: ล้างแถวข้อมูลในชีตหลัก (เหลือหัวตาราง) — ต้องผ่าน apiKey แล้ว (doPost) + adminToken จริง */
 function handleAdminPurgeSheet_(data) {
-  // อนุญาต: adminToken ที่ verify ได้ หรือเรียกจาก Next ที่ trusted (มี apiKey แล้ว)
-  const tokenOk = verifyAdminToken_(data.adminToken);
-  const trustedNext = data.trustedNext === true || data.trustedNext === "true";
-  if (!tokenOk && !trustedNext) {
+  if (!verifyAdminToken_(data.adminToken)) {
     return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์" });
   }
   if (String(data.confirm || "") !== "ล้างข้อมูลทั้งหมด") {

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { getClientIdToken } from "@/lib/clientLine";
+import { ensureLiff } from "@/lib/ensureLiff";
 import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
 
 type Report = {
@@ -32,6 +33,8 @@ export function LostFoundClient({
   const [keyword, setKeyword] = useState("");
   const [busyId, setBusyId] = useState("");
   const [toast, setToast] = useState("");
+  const [liffReady, setLiffReady] = useState(false);
+  const [liffError, setLiffError] = useState("");
 
   const refresh = useCallback(async () => {
     try {
@@ -46,6 +49,39 @@ export function LostFoundClient({
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function bootLiff() {
+      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      const ready = await ensureLiff(liffId);
+      if (cancelled) return;
+      if (ready.bypass) {
+        setLiffReady(true);
+        return;
+      }
+      if (!ready.ok || !ready.liff) {
+        setLiffError(ready.message || "เข้าสู่ระบบ LINE ไม่สำเร็จ — เปิดจากแอป LINE เพื่อเคลมของ");
+        setLiffReady(false);
+        return;
+      }
+      try {
+        if (!ready.liff.isLoggedIn() && ready.liff.isInClient?.()) {
+          ready.liff.login({
+            redirectUri: `${window.location.origin}/lost-found`
+          });
+          return;
+        }
+        setLiffReady(true);
+      } catch {
+        setLiffError("เข้าสู่ระบบ LINE ไม่สำเร็จ");
+      }
+    }
+    bootLiff();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useTicketsRealtime(refresh, true);
 
@@ -67,8 +103,9 @@ export function LostFoundClient({
     setBusyId(submitId);
     setToast("");
     try {
+      if (!liffReady && liffError) throw new Error(liffError);
       const idToken = await getClientIdToken();
-      if (!idToken) throw new Error("เปิดจากแอป LINE ก่อน");
+      if (!idToken) throw new Error("เปิดจากแอป LINE ก่อน (ใช้ลิงก์ LIFF ติดตาม)");
       const res = await fetch("/api/lf/claim", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -92,6 +129,11 @@ export function LostFoundClient({
         <p className="text-sm text-blue-100">Lost & Found</p>
       </header>
       <main className="max-w-3xl mx-auto px-4 py-5 space-y-4">
+        {liffError && (
+          <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-sm text-amber-900">
+            {liffError}
+          </div>
+        )}
         {toast && (
           <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-900">
             {toast}

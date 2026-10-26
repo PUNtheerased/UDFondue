@@ -57,7 +57,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const imageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.map(String) : [];
+    const rawImageUrls = Array.isArray(body.imageUrls) ? body.imageUrls.map(String) : [];
+    const supabaseBase = String(process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
+    const allowPrefix = supabaseBase
+      ? `${supabaseBase}/storage/v1/object/public/udfondue-images/`
+      : "";
+    const imageUrls = rawImageUrls
+      .map((u) => u.trim())
+      .filter((u) => {
+        if (!u || u.startsWith("blob:") || u.startsWith("data:")) return false;
+        if (!allowPrefix) return false;
+        return u.startsWith(allowPrefix);
+      })
+      .slice(0, 5);
     const submitId = String(body.submitId || "").trim();
     if (!submitId) {
       return NextResponse.json({ status: "error", message: "ไม่มีเลขที่แจ้ง" }, { status: 400 });

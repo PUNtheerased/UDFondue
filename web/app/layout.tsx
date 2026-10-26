@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           href="https://fonts.googleapis.com/css2?family=Anuphan:wght@300;400;500;600;700&display=swap"
           rel="stylesheet"
         />
-        <script src="https://static.line-scdn.net/liff/edge/2/sdk.js" async />
+        <script src="https://static.line-scdn.net/liff/edge/2/sdk.js" />
         <script
           src="https://challenges.cloudflare.com/turnstile/v0/api.js"
           async

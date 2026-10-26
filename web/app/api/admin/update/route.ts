@@ -6,6 +6,7 @@ import { notifyLine } from "@/lib/notifyLine";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import {
   cancelHandoff,
+  getTicketBySubmitId,
   hideTicket,
   mergeTickets,
   unlockHandoff,
@@ -54,6 +55,16 @@ export async function POST(req: NextRequest) {
 
       if (action === "assignJanitor") {
         const submitId = String(body.submitId || "");
+        const existing = await getTicketBySubmitId(submitId);
+        if (!existing) {
+          return NextResponse.json({ status: "error", message: "ไม่พบเลขที่แจ้ง" }, { status: 404 });
+        }
+        if (String(existing.assigned_to || "") === "janitor") {
+          return NextResponse.json({
+            status: "success",
+            message: "ส่งไปดำเนินการต่อแล้ว (ไม่แจ้งซ้ำ)"
+          });
+        }
         const row = await updateTicketStatus({
           submitId,
           status: "กำลังดำเนินการ",

@@ -46,7 +46,15 @@ async function redisRateLimit(key: string, limit: number, windowMs: number) {
   const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
   const count = Number(await upstashCommand(["INCR", redisKey]));
   if (!count || Number.isNaN(count)) throw new Error("Upstash INCR failed");
-  if (count === 1) {
+  // EXPIRE NX — ตั้ง TTL เฉพาะครั้งแรก; ถ้า race แล้ว TTL หาย ให้ EXPIRE ซ้ำ
+  try {
+    const set = await upstashCommand(["EXPIRE", redisKey, windowSec, "NX"]);
+    if (set === 0 || set === null) {
+      const ttl = Number(await upstashCommand(["TTL", redisKey]));
+      if (ttl < 0) await upstashCommand(["EXPIRE", redisKey, windowSec]);
+    }
+  } catch {
+    // Upstash เก่าไม่มี NX — ตั้ง EXPIRE หลัง INCR ทุกครั้ง (sliding window ยอมรับได้)
     await upstashCommand(["EXPIRE", redisKey, windowSec]);
   }
   if (count > limit) {

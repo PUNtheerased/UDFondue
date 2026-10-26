@@ -371,6 +371,7 @@ export async function getHandoffForUser(foundSubmitId: string, lineId: string) {
     .select("*")
     .eq("found_submit_id", foundSubmitId)
     .or(`claimant_line_id.eq.${lineId},holder_line_id.eq.${lineId}`)
+    .in("status", ["claimed", "code_active", "locked", "expired"])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -442,10 +443,23 @@ export async function createHandoffCode(foundSubmitId: string, holderLineId: str
   if (!ticket) throw new Error("ไม่พบรายการ");
   if (ticket.line_id !== holderLineId) throw new Error("เฉพาะผู้ถือของสร้างรหัสได้");
 
-  const handoff = await getHandoffForCodeCreate(foundSubmitId);
+  let handoff = await getHandoffForCodeCreate(foundSubmitId);
   if (!handoff) throw new Error("ยังไม่มีคนเคลม — รอเจ้าของกดนี่ของฉันก่อน");
   if (handoff.holder_line_id !== holderLineId) throw new Error("ไม่มีสิทธิ์สร้างรหัส");
-  if (!["claimed", "code_active", "locked", "expired"].includes(handoff.status)) {
+  // ห้ามทับรหัสที่ยังใช้งานอยู่ — เฉพาะ claimed / locked / expired
+  if (handoff.status === "code_active") {
+    if (handoff.code_expires_at && Date.now() > new Date(handoff.code_expires_at).getTime()) {
+      const sbExp = getSupabaseAdmin();
+      await sbExp
+        .from("lf_handoffs")
+        .update({ status: "expired", updated_at: new Date().toISOString() })
+        .eq("id", handoff.id);
+      handoff = { ...handoff, status: "expired" };
+    } else {
+      throw new Error("มีรหัสใช้อยู่แล้ว — รอหมดอายุหรือให้อีกฝั่งใส่รหัสก่อน");
+    }
+  }
+  if (!["claimed", "locked", "expired"].includes(handoff.status)) {
     throw new Error("สถานะนี้สร้างรหัสไม่ได้");
   }
 
@@ -591,25 +605,40 @@ export async function listZoneIssues(building: string, zone: string) {
 }
 
 export async function upvoteTicket(submitId: string, lineId: string) {
-  const ticket = await getTicketBySubmitId(submitId);
-  if (!ticket) throw new Error("ไม่พบเรื่อง");
-  const voters = String(ticket.upvoted_line_ids || "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (voters.includes(lineId)) {
-    return { upvoteCount: ticket.upvote_count, already: true };
-  }
-  voters.push(lineId);
   const sb = getSupabaseAdmin();
-  const { error } = await sb
-    .from("tickets")
-    .update({
-      upvote_count: voters.length,
-      upvoted_line_ids: voters.join(","),
-      updated_at: new Date().toISOString()
-    })
-    .eq("submit_id", submitId);
-  if (error) throw new Error(error.message);
-  return { upvoteCount: voters.length, already: false };
+  const { data, error } = await sb.rpc("upvote_ticket", {
+    p_submit_id: submitId,
+    p_line_id: lineId
+  });
+  if (error) {
+    // ยังไม่รัน upvote-rpc.sql — fallback แบบเดิม (อาจแข่งกันเสียคะแนน)
+    if (error.message?.includes("upvote_ticket") || error.code === "PGRST202") {
+      const ticket = await getTicketBySubmitId(submitId);
+      if (!ticket) throw new Error("ไม่พบเรื่อง");
+      const voters = String(ticket.upvoted_line_ids || "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (voters.includes(lineId)) {
+        return { upvoteCount: ticket.upvote_count, already: true };
+      }
+      voters.push(lineId);
+      const { error: upErr } = await sb
+        .from("tickets")
+        .update({
+          upvote_count: voters.length,
+          upvoted_line_ids: voters.join(","),
+          updated_at: new Date().toISOString()
+        })
+        .eq("submit_id", submitId);
+      if (upErr) throw new Error(upErr.message);
+      return { upvoteCount: voters.length, already: false };
+    }
+    throw new Error(error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    upvoteCount: Number(row?.upvote_count ?? 0),
+    already: !!row?.already
+  };
 }
