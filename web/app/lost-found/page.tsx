@@ -1,8 +1,9 @@
 import { SCHOOL_BUILDINGS } from "@/constants/schoolZones";
 import { LostFoundClient } from "@/components/LostFoundClient";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
-import { listPublicLostFound, rowToPublic } from "@/lib/ticketsDb";
+import { listPublicLostFound } from "@/lib/ticketsDb";
 import { callGas } from "@/lib/gas";
+import { toPublicLostFound } from "@/lib/publicProjection";
 import { stripPublicReports } from "@/lib/stripPublic";
 
 export const dynamic = "force-dynamic";
@@ -12,9 +13,7 @@ async function fetchLostFound() {
     try {
       const rows = await listPublicLostFound();
       return {
-        reports: stripPublicReports(
-          rows.map((r) => rowToPublic(r) as unknown as Record<string, unknown>)
-        )
+        reports: rows.map((r) => toPublicLostFound(r) as unknown as Record<string, unknown>)
       };
     } catch (err) {
       console.error("lost-found page supabase", err);

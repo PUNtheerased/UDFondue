@@ -35,20 +35,36 @@ export function LostFoundClient({
   const [toast, setToast] = useState("");
   const [liffReady, setLiffReady] = useState(false);
   const [liffError, setLiffError] = useState("");
+  const [loadError, setLoadError] = useState("");
 
   const refresh = useCallback(async () => {
     try {
       const res = await fetch("/api/lost-found");
       const data = await res.json();
-      if (data.status === "success") setReports(data.reports || []);
+      if (data.status === "success") {
+        setReports(data.reports || []);
+        setLoadError("");
+      } else {
+        setLoadError(data.message || "โหลดกระดานไม่สำเร็จ");
+      }
     } catch {
-      /* keep current */
+      setLoadError("โหลดกระดานไม่สำเร็จ");
     }
   }, []);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // โหลดครั้งแรก: ถ้าแท็บตามหาว่างแต่มีฝั่งพบของ — สลับให้เห็นข้อมูลทันที
+  useEffect(() => {
+    const lost = (reports || []).filter((r) => (r.lfType || "แจ้งทำของหาย") === "แจ้งทำของหาย");
+    const found = (reports || []).filter((r) => r.lfType === "แจ้งพบของหาย");
+    if (lost.length === 0 && found.length > 0) {
+      setTab("แจ้งพบของหาย");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when report set identity changes size
+  }, [reports.length]);
 
   useEffect(() => {
     let cancelled = false;
@@ -134,24 +150,33 @@ export function LostFoundClient({
             {liffError}
           </div>
         )}
+        {loadError && (
+          <div className="rounded-xl bg-red-50 border border-red-100 px-3 py-2 text-sm text-red-800">
+            {loadError}
+          </div>
+        )}
         {toast && (
           <div className="rounded-xl bg-blue-50 border border-blue-100 px-3 py-2 text-sm text-blue-900">
             {toast}
           </div>
         )}
         <div className="flex gap-2">
-          {(["แจ้งทำของหาย", "แจ้งพบของหาย"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`flex-1 py-2 rounded-xl text-sm font-semibold ${
-                tab === t ? "bg-blue-800 text-white" : "bg-white border"
-              }`}
-            >
-              {t === "แจ้งทำของหาย" ? "ตามหาของหาย" : "พบของรอเจ้าของ"}
-            </button>
-          ))}
+          {(["แจ้งทำของหาย", "แจ้งพบของหาย"] as const).map((t) => {
+            const count = (reports || []).filter((r) => (r.lfType || "แจ้งทำของหาย") === t).length;
+            return (
+              <button
+                key={t}
+                type="button"
+                onClick={() => setTab(t)}
+                className={`flex-1 py-2 rounded-xl text-sm font-semibold ${
+                  tab === t ? "bg-blue-800 text-white" : "bg-white border"
+                }`}
+              >
+                {t === "แจ้งทำของหาย" ? "ตามหาของหาย" : "พบของรอเจ้าของ"}
+                {count > 0 ? ` (${count})` : ""}
+              </button>
+            );
+          })}
         </div>
         <input
           className="w-full border rounded-xl px-3 py-2 bg-white"
@@ -178,9 +203,11 @@ export function LostFoundClient({
               <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-50 text-blue-800 text-xl">
                 ⌕
               </div>
-              <p className="font-semibold text-slate-800">ยังไม่มีรายการตอนนี้</p>
+              <p className="font-semibold text-slate-800">ยังไม่มีรายการในแท็บนี้</p>
               <p className="mt-1 text-sm text-slate-500 leading-relaxed">
-                ลองเปลี่ยนตัวกรอง หรือไปแจ้งของหาย / พบของที่ฟอร์ม
+                {reports.length > 0
+                  ? "มีรายการในอีกแท็บหนึ่ง — ลองสลับด้านบน หรือล้างตัวกรองอาคาร/คำค้น"
+                  : "ยังไม่มีของหาย/พบของบนกระดาน — ลองแจ้งจากฟอร์มแล้วติ๊กแสดงบนกระดานสาธารณะ"}
               </p>
               <Link
                 href="/?category=%E0%B8%95%E0%B8%B2%E0%B8%A1%E0%B8%AB%E0%B8%B2%E0%B8%82%E0%B8%AD%E0%B8%87%E0%B8%AB%E0%B8%B2%E0%B8%A2"

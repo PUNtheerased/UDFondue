@@ -282,31 +282,6 @@ export function NimdaApp() {
     }
   }
 
-  async function assignJanitor() {
-    if (!selected) return;
-    setBusy(true);
-    try {
-      const res = await fetch("/api/admin/update", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "assignJanitor",
-          submitId: selected.submitId,
-          studentNote: editNote || "ดำเนินการต่อแล้ว กำลังดำเนินการ"
-        })
-      });
-      const data = await res.json();
-      if (data.status !== "success") throw new Error(data.message);
-      setToast("ดำเนินการต่อแล้ว");
-      setSelected(null);
-      await load();
-    } catch (err) {
-      setToast(err instanceof Error ? err.message : "ส่งต่อไม่สำเร็จ");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function mergeTickets() {
     if (!selected || !mergeIds.trim()) return;
     setBusy(true);
@@ -452,7 +427,7 @@ export function NimdaApp() {
       <div className="min-h-dvh flex items-center justify-center px-4">
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8 space-y-4">
           <h1 className="text-xl font-bold text-center">สำหรับครู / เจ้าหน้าที่</h1>
-          <p className="text-xs text-gray-500 text-center">ดูคิว คุมสถานะ และดำเนินการต่อ</p>
+          <p className="text-xs text-gray-500 text-center">ดูคิวและอัปเดตสถานะเรื่อง</p>
           <label className="block text-sm space-y-1">
             <span className="font-medium text-slate-700">รหัสผ่าน</span>
             <input
@@ -683,7 +658,6 @@ export function NimdaApp() {
                   {r.date || r.time ? ` · ${[r.date, r.time].filter(Boolean).join(" ")}` : ""}
                   {r.building || r.zone ? ` · ${[r.building, r.zone].filter(Boolean).join("/")}` : ""}
                   {r.urgency === "เร่งด่วน" ? " · เร่งด่วน" : ""}
-                  {r.assignedTo === "janitor" ? " · ดำเนินการต่อแล้ว" : ""}
                   {r.handoff?.status ? ` · เคลม:${r.handoff.status}` : ""}
                   {` · +${r.upvoteCount || 0}`}
                 </p>
@@ -839,10 +813,6 @@ export function NimdaApp() {
               <p className="text-xs font-semibold text-slate-500 mb-1">งานภายใน</p>
               <dl>
                 <DetailRow label="กลุ่มรับเรื่อง" value={selected.assignedGroup} />
-                <DetailRow
-                  label="มอบหมาย"
-                  value={selected.assignedTo === "janitor" ? "ดำเนินการต่อ (ป้อมยาม)" : selected.assignedTo}
-                />
                 <DetailRow label="รวมเข้าเคส" value={selected.mergedToId} />
                 <DetailRow label="คะแนนโหวต" value={selected.upvoteCount ?? 0} />
                 <DetailRow label="สถานะเคลม" value={selected.handoff?.status} />
@@ -901,15 +871,6 @@ export function NimdaApp() {
                 ))}
               </div>
             </div>
-
-            <button
-              type="button"
-              className="w-full border border-blue-800 text-blue-800 py-2.5 rounded-xl text-sm font-semibold"
-              disabled={busy}
-              onClick={assignJanitor}
-            >
-              ดำเนินการต่อ
-            </button>
 
             <button
               type="button"

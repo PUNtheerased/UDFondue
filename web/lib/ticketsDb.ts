@@ -203,9 +203,8 @@ export async function createTicket(input: CreateTicketInput) {
     !!input.lfType ||
     input.category.startsWith("ตามหาของหาย") ||
     input.category.includes("ของหาย");
-  const showcase =
-    input.isPublicShowcase === true ||
-    (isLf && input.isPublicShowcase !== false);
+  // ของหาย/พบของ → ขึ้นกระดานเป็นค่าเริ่มต้น (ยกเว้นผู้ใช้ติ๊กปิดเอง)
+  const showcase = isLf ? input.isPublicShowcase !== false : input.isPublicShowcase === true;
 
   const row: Partial<TicketRow> = {
     submit_id: input.submitId,
@@ -273,24 +272,33 @@ export async function listTicketsByLineId(lineId: string) {
   return (data || []) as TicketRow[];
 }
 
+function isLostFoundTicket(r: TicketRow) {
+  const cat = String(r.category || "");
+  return (
+    !!String(r.lf_type || "").trim() ||
+    cat.includes("ของหาย") ||
+    cat.startsWith("ตามหาของหาย") ||
+    cat.startsWith("พบของ")
+  );
+}
+
 export async function listPublicLostFound() {
   const sb = getSupabaseAdmin();
   const closed = new Set(["เสร็จสิ้น", "ปิดเรื่อง", "REJECTED_MODERATION"]);
+  // ไม่บังคับ eq showcase ใน SQL — บางแถวเก่าเป็น null/false ทั้งที่เป็นของหาย
   const { data, error } = await sb
     .from("tickets")
     .select("*")
-    .eq("is_public_showcase", true)
     .order("created_at", { ascending: false })
-    .limit(150);
+    .limit(250);
   if (error) throw new Error(error.message);
   return ((data || []) as TicketRow[]).filter((r) => {
     if (closed.has(r.status)) return false;
-    if (r.merged_to_id) return false;
-    const isLf =
-      !!r.lf_type ||
-      String(r.category || "").includes("ของหาย") ||
-      String(r.category || "").startsWith("ตามหาของหาย");
-    return isLf;
+    if (String(r.merged_to_id || "").trim()) return false;
+    if (!isLostFoundTicket(r)) return false;
+    // ซ่อนเฉพาะที่แอดมิน/ระบบตั้ง false ชัดเจน
+    if (r.is_public_showcase === false) return false;
+    return true;
   });
 }
 
