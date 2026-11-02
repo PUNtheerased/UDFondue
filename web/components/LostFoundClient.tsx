@@ -69,16 +69,28 @@ export function LostFoundClient({
   useEffect(() => {
     let cancelled = false;
     async function bootLiff() {
-      const liffId = process.env.NEXT_PUBLIC_LIFF_ID_TRACK || "";
+      const liffId = String(
+        process.env.NEXT_PUBLIC_LIFF_ID_LOST_FOUND ||
+          process.env.NEXT_PUBLIC_LIFF_ID_TRACK ||
+          ""
+      ).trim();
+      if (!liffId) {
+        // ดูกระดานได้ — เคลมต้องมี LIFF
+        setLiffReady(false);
+        setLiffError("");
+        return;
+      }
       const ready = await ensureLiff(liffId);
       if (cancelled) return;
       if (ready.bypass) {
         setLiffReady(true);
+        setLiffError("");
         return;
       }
       if (!ready.ok || !ready.liff) {
-        setLiffError(ready.message || "เข้าสู่ระบบ LINE ไม่สำเร็จ — เปิดจากแอป LINE เพื่อเคลมของ");
+        // ไม่บล็อกการดูกระดาน — โชว์เตือนเฉพาะตอนจะเคลม
         setLiffReady(false);
+        setLiffError(ready.message || "");
         return;
       }
       try {
@@ -89,7 +101,9 @@ export function LostFoundClient({
           return;
         }
         setLiffReady(true);
+        setLiffError("");
       } catch {
+        setLiffReady(false);
         setLiffError("เข้าสู่ระบบ LINE ไม่สำเร็จ");
       }
     }
@@ -119,7 +133,26 @@ export function LostFoundClient({
     setBusyId(submitId);
     setToast("");
     try {
-      if (!liffReady && liffError) throw new Error(liffError);
+      const liffId = String(
+        process.env.NEXT_PUBLIC_LIFF_ID_LOST_FOUND ||
+          process.env.NEXT_PUBLIC_LIFF_ID_TRACK ||
+          ""
+      ).trim();
+      if (!liffId) {
+        throw new Error("ยังไม่ได้ตั้ง NEXT_PUBLIC_LIFF_ID_LOST_FOUND (หรือ TRACK) บน Vercel");
+      }
+      if (!liffReady) {
+        const ready = await ensureLiff(liffId);
+        if (!ready.ok && !ready.bypass) {
+          throw new Error(ready.message || liffError || "เข้าสู่ระบบ LINE ไม่สำเร็จ");
+        }
+        if (ready.liff && !ready.liff.isLoggedIn()) {
+          ready.liff.login({ redirectUri: `${window.location.origin}/lost-found` });
+          return;
+        }
+        setLiffReady(true);
+        setLiffError("");
+      }
       const idToken = await getClientIdToken();
       if (!idToken) throw new Error("เปิดจากแอป LINE ก่อน (ใช้ลิงก์ LIFF ติดตาม)");
       const res = await fetch("/api/lf/claim", {
@@ -147,7 +180,11 @@ export function LostFoundClient({
       <main className="max-w-3xl mx-auto px-4 py-5 space-y-4">
         {liffError && (
           <div className="rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-sm text-amber-900">
-            {liffError}
+            <p className="font-semibold">ยังเคลมของผ่าน LINE ไม่ได้</p>
+            <p className="mt-0.5">{liffError}</p>
+            <p className="mt-1 text-xs text-amber-800/80">
+              ดูกระดานได้ตามปกติ — ถ้าจะกด «นี่ของฉัน» ให้เปิดผ่าน LIFF ติดตาม หรือตั้งค่า LIFF ID บน Vercel
+            </p>
           </div>
         )}
         {loadError && (

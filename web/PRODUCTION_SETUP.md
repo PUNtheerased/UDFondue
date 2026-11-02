@@ -18,6 +18,7 @@
 | `SUPABASE_SERVICE_ROLE` | **ใช่ (บังคับ)** | service_role — ห้ามใส่ฝั่ง client · ไม่มีค่านี้ track จะ 503 บน Production |
 | `NEXT_PUBLIC_LIFF_ID_REPORT` | ใช่ | LINE Developers → LIFF |
 | `NEXT_PUBLIC_LIFF_ID_TRACK` | ใช่ | LINE Developers → LIFF |
+| `NEXT_PUBLIC_LIFF_ID_LOST_FOUND` | แนะนำ | LIFF กระดานของหาย (เช่น `2010319415-POx7r9kx`) · ไม่มีแล้วใช้ TRACK |
 | `LINE_CHANNEL_ID` | ใช่ | LINE Developers → Channel ID (ตัวเลข) |
 | `LINE_CHANNEL_ACCESS_TOKEN` | ใช่ | Messaging API → Channel access token (push จาก Next) |
 | `ADMIN_PIN` | ใช่ | รหัสหน้า `/nimda` (ตั้งใหม่เอง · ให้ตรง Script Property `ADMIN_PASSWORD`) |
@@ -70,7 +71,7 @@
 | --- | --- |
 | แจ้งเรื่อง (REPORT) | `https://ud-fondue.vercel.app/` |
 | ติดตาม (TRACK) | `https://ud-fondue.vercel.app/track` |
-| ของหาย (ใช้ LIFF TRACK เดียวกัน) | เพิ่ม Endpoint `/lost-found` ใน LIFF TRACK หรือเปิดผ่าน `https://liff.line.me/<LIFF_ID_TRACK>` แล้วนำทางไป `/lost-found` |
+| ของหาย (LOST_FOUND) | `https://ud-fondue.vercel.app/lost-found` · เปิดผ่าน `https://liff.line.me/<LIFF_ID_LOST_FOUND>` |
 
 Scope ที่ต้องเปิดทั้งสองแอป: **profile** + **openid** (จำเป็นสำหรับ `getIDToken` — ไม่มี openid แล้ว track/claim ใช้ไม่ได้)
 

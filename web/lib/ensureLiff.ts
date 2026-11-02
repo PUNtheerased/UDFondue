@@ -85,9 +85,15 @@ export async function ensureLiff(liffId: string): Promise<EnsureResult> {
       await liff.init({ liffId: id });
       return { ok: true, bypass: false, liff };
     } catch (err) {
-      const message = err instanceof Error ? err.message : "เข้าสู่ระบบ LINE ไม่สำเร็จ";
+      const raw = err instanceof Error ? err.message : String(err || "");
       if (liff.isLoggedIn?.()) {
         return { ok: true, bypass: false, liff };
+      }
+      const lower = raw.toLowerCase();
+      let message = raw || "เข้าสู่ระบบ LINE ไม่สำเร็จ";
+      if (lower.includes("invalid liff") || lower.includes("invalid_liff")) {
+        message =
+          "LIFF ID ไม่ถูกต้อง — ตรวจ NEXT_PUBLIC_LIFF_ID_LOST_FOUND / TRACK บน Vercel ให้ตรงกับ LINE Developers แล้ว Redeploy";
       }
       return { ok: false, bypass: false, message };
     }
