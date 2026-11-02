@@ -3,9 +3,17 @@ node_modules/
 web/node_modules/
 web/.next/
 web/out/
+web/tsconfig.tsbuildinfo
+*.tsbuildinfo
 .env
 .env.local
+.env.*.local
 web/.env
 web/.env.local
+web/.env.*.local
+*.pem
+credentials.json
+service-account*.json
+*-service-account.json
 *.log
 .DS_Store

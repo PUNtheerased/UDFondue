@@ -10,11 +10,22 @@
 }
 
 body {
-  font-family: "Anuphan", system-ui, sans-serif;
+  font-family: inherit;
   background: #eef2f7;
   min-height: 100dvh;
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
+}
+
+input,
+select,
+textarea {
+  font-size: 16px;
+}
+
+:focus-visible {
+  outline: 2px solid #1e3a8a;
+  outline-offset: 2px;
 }
 
 .pb-safe {

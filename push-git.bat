@@ -14,8 +14,17 @@ set /p MSG=Commit message (ว่าง = update):
 if "%MSG%"=="" set MSG=update
 
 git add -A
+git reset -q -- .env .env.local .env.*.local web/.env web/.env.local web/.env.*.local *.pem credentials.json service-account.json 2>nul
 git status --short
 echo.
+
+git diff --cached --name-only | findstr /I /R "\.env$ \.env\.local \.pem credential secret" >nul
+if not errorlevel 1 (
+  echo พบไฟล์ที่อาจเป็นความลับใน staging — ยกเลิก
+  git diff --cached --name-only
+  pause
+  exit /b 1
+)
 
 git diff --cached --quiet
 if %ERRORLEVEL%==0 (

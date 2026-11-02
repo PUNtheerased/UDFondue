@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertDevMode, getAdminSession, getNimdaMode } from "@/lib/adminSession";
+import { publicMessage } from "@/lib/publicMessage";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { getSiteSettings, setSiteSetting } from "@/lib/ticketsDb";
 
@@ -8,8 +9,10 @@ export async function GET() {
     const settings = await getSiteSettings();
     return NextResponse.json({ status: "success", settings });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "โหลดข้อความไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }
 
@@ -38,7 +41,9 @@ export async function POST(req: NextRequest) {
     const settings = await getSiteSettings();
     return NextResponse.json({ status: "success", settings, mode: getNimdaMode() });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Save failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "บันทึกข้อความไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

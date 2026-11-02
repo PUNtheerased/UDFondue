@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
+import { publicMessage } from "@/lib/publicMessage";
+import { toPublicLostFound } from "@/lib/publicProjection";
 import { stripPublicReports } from "@/lib/stripPublic";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
-import { listPublicLostFound, rowToPublic } from "@/lib/ticketsDb";
+import { listPublicLostFound } from "@/lib/ticketsDb";
 
 export const dynamic = "force-dynamic";
 
@@ -18,18 +20,14 @@ export async function GET(req: NextRequest) {
         let rows = await listPublicLostFound();
         if (lfType) rows = rows.filter((r) => r.lf_type === lfType);
         if (building) rows = rows.filter((r) => r.building === building);
-        reports = stripPublicReports(
-          rows.map((r) => rowToPublic(r) as unknown as Record<string, unknown>)
-        );
+        reports = rows.map((row) => toPublicLostFound(row) as unknown as Record<string, unknown>);
         backend = "supabase";
-        // สำเร็จแม้ว่าง — ไม่ดึง Sheet เก่ามาทับ
         return NextResponse.json(
           { status: "success", reports, backend },
           { headers: { "Cache-Control": "no-store" } }
         );
       } catch (err) {
         console.error("lost-found supabase", err);
-        // ตก GAS เฉพาะเมื่อ Supabase error จริง
       }
     }
 
@@ -44,8 +42,10 @@ export async function GET(req: NextRequest) {
     } catch (err) {
       console.error("lost-found gas", err);
       if (reports.length === 0) {
-        const message = err instanceof Error ? err.message : "Lost-found fetch failed";
-        return NextResponse.json({ status: "error", message }, { status: 500 });
+        return NextResponse.json(
+          { status: "error", message: publicMessage(err, "โหลดกระดานของหายไม่สำเร็จ") },
+          { status: 500 }
+        );
       }
     }
 
@@ -54,7 +54,9 @@ export async function GET(req: NextRequest) {
       { headers: { "Cache-Control": "no-store" } }
     );
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Lost-found fetch failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "โหลดกระดานของหายไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { publicMessage } from "@/lib/publicMessage";
 import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { cancelHandoff } from "@/lib/ticketsDb";
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
     await mirrorTicketToSheet(submitId);
     return NextResponse.json({ status: "success", message: "ยกเลิกเคลมแล้ว" });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Cancel failed";
-    return NextResponse.json({ status: "error", message }, { status: 400 });
+    const message = publicMessage(err, "ยกเลิกไม่สำเร็จ");
+    return NextResponse.json({ status: "error", message }, { status: message === "ยกเลิกไม่สำเร็จ" ? 500 : 400 });
   }
 }

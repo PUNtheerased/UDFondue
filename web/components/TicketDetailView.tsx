@@ -116,7 +116,7 @@ export function TicketDetailView({
             <div className="grid grid-cols-2 gap-2">
               {before.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="" className="rounded-xl border object-cover w-full h-40" />
+                <img key={url} src={url} alt="รูปที่แจ้งมา" className="rounded-xl border object-cover w-full h-40" />
               ))}
             </div>
           </section>
@@ -127,7 +127,7 @@ export function TicketDetailView({
             <div className="grid grid-cols-2 gap-2">
               {after.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="" className="rounded-xl border object-cover w-full h-40" />
+                <img key={url} src={url} alt="รูปหลังดำเนินการ" className="rounded-xl border object-cover w-full h-40" />
               ))}
             </div>
           </section>

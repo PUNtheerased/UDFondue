@@ -2,22 +2,49 @@ type Bucket = { count: number; resetAt: number };
 
 const memoryBuckets = new Map<string, Bucket>();
 
-function memoryRateLimit(key: string, limit: number, windowMs: number) {
+export type RateLimitOk = {
+  ok: true;
+  remaining: number;
+  backend: "memory" | "redis";
+};
+
+export type RateLimitDenied = {
+  ok: false;
+  retryAfterMs: number;
+  backend: "memory" | "redis" | "redis-down";
+  reason: "limit" | "unavailable";
+};
+
+export type RateLimitResult = RateLimitOk | RateLimitDenied;
+
+function memoryRateLimit(key: string, limit: number, windowMs: number): RateLimitResult {
+  pruneMemoryBuckets();
   const now = Date.now();
   const current = memoryBuckets.get(key);
   if (!current || current.resetAt < now) {
     memoryBuckets.set(key, { count: 1, resetAt: now + windowMs });
-    return { ok: true as const, remaining: limit - 1, backend: "memory" as const };
+    return { ok: true, remaining: limit - 1, backend: "memory" };
   }
   if (current.count >= limit) {
     return {
-      ok: false as const,
+      ok: false,
       retryAfterMs: current.resetAt - now,
-      backend: "memory" as const
+      backend: "memory",
+      reason: "limit"
     };
   }
   current.count += 1;
-  return { ok: true as const, remaining: limit - current.count, backend: "memory" as const };
+  return { ok: true, remaining: limit - current.count, backend: "memory" };
+}
+
+function pruneMemoryBuckets() {
+  if (memoryBuckets.size < 2000) return;
+  const now = Date.now();
+  const stale: string[] = [];
+  memoryBuckets.forEach((bucket, key) => {
+    if (bucket.resetAt < now) stale.push(key);
+  });
+  stale.forEach((key) => memoryBuckets.delete(key));
 }
 
 function upstashConfigured() {
@@ -41,12 +68,15 @@ async function upstashCommand(command: (string | number)[]) {
   return data.result;
 }
 
-async function redisRateLimit(key: string, limit: number, windowMs: number) {
+function unavailable(): RateLimitDenied {
+  return { ok: false, retryAfterMs: 30_000, backend: "redis-down", reason: "unavailable" };
+}
+
+async function redisRateLimit(key: string, limit: number, windowMs: number): Promise<RateLimitResult> {
   const redisKey = `rl:${key}`;
   const windowSec = Math.max(1, Math.ceil(windowMs / 1000));
   const count = Number(await upstashCommand(["INCR", redisKey]));
   if (!count || Number.isNaN(count)) throw new Error("Upstash INCR failed");
-  // EXPIRE NX — ตั้ง TTL เฉพาะครั้งแรก; ถ้า race แล้ว TTL หาย ให้ EXPIRE ซ้ำ
   try {
     const set = await upstashCommand(["EXPIRE", redisKey, windowSec, "NX"]);
     if (set === 0 || set === null) {
@@ -54,26 +84,53 @@ async function redisRateLimit(key: string, limit: number, windowMs: number) {
       if (ttl < 0) await upstashCommand(["EXPIRE", redisKey, windowSec]);
     }
   } catch {
-    // Upstash เก่าไม่มี NX — ตั้ง EXPIRE หลัง INCR ทุกครั้ง (sliding window ยอมรับได้)
     await upstashCommand(["EXPIRE", redisKey, windowSec]);
   }
   if (count > limit) {
-    return { ok: false as const, retryAfterMs: windowMs, backend: "redis" as const };
+    return { ok: false, retryAfterMs: windowMs, backend: "redis", reason: "limit" };
   }
-  return { ok: true as const, remaining: Math.max(0, limit - count), backend: "redis" as const };
+  return { ok: true, remaining: Math.max(0, limit - count), backend: "redis" };
 }
 
 /**
- * Rate limit กลางด้วย Upstash Redis ถ้ามี env
- * ไม่มี Redis → ใช้หน่วยความจำ (soft limit ต่อ instance)
+ * Shared rate limit. When Upstash is configured, a Redis outage fails closed
+ * so a backend blip cannot disable the limit.
  */
-export async function rateLimit(key: string, limit = 5, windowMs = 10 * 60 * 1000) {
+export async function rateLimit(key: string, limit = 5, windowMs = 10 * 60 * 1000): Promise<RateLimitResult> {
   if (upstashConfigured()) {
     try {
       return await redisRateLimit(key, limit, windowMs);
     } catch (err) {
-      console.error("redis rateLimit fallback to memory", err);
+      console.error("redis rateLimit fail closed", err);
+      return unavailable();
     }
   }
   return memoryRateLimit(key, limit, windowMs);
+}
+
+/** Read the current count without incrementing. Redis errors fail closed. */
+export async function isRateLimited(key: string, limit: number) {
+  if (upstashConfigured()) {
+    try {
+      const count = Number(await upstashCommand(["GET", `rl:${key}`])) || 0;
+      return count >= limit;
+    } catch (err) {
+      console.error("redis rateLimit peek fail closed", err);
+      return true;
+    }
+  }
+  const current = memoryBuckets.get(key);
+  if (!current || current.resetAt < Date.now()) return false;
+  return current.count >= limit;
+}
+
+export function rateLimitMessage(result: RateLimitDenied, normal: string) {
+  if (result.reason === "unavailable") {
+    return "ระบบป้องกันสแปมชั่วคราวไม่พร้อม ลองใหม่อีกสักครู่";
+  }
+  return normal;
+}
+
+export function rateLimitStatus(result: RateLimitDenied) {
+  return result.reason === "unavailable" ? 503 : 429;
 }

@@ -54,6 +54,7 @@ export function BuildingPicker({ value, onChange }: Props) {
         }`}
         aria-expanded={open}
         aria-haspopup="listbox"
+        aria-label={value ? `สถานที่ ${value}` : "เลือกสถานที่หรืออาคาร"}
       >
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-800">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -95,6 +96,7 @@ export function BuildingPicker({ value, onChange }: Props) {
               <input
                 ref={inputRef}
                 className="w-full bg-transparent text-sm outline-none placeholder:text-slate-400"
+                aria-label="ค้นหาอาคาร"
                 placeholder="พิมพ์ชื่อ เช่น โรงอาหาร, อาคาร 3"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}

@@ -30,9 +30,10 @@
 
 หลังใส่ครบ → **Deployments → Redeploy**
 
-> **Rate limit:** มี Upstash → ใช้ Redis · ไม่มี → หน่วยความจำต่อ instance  
-> **รูป:** อัปผ่าน `/api/upload` (service role) — รัน `storage-rls.sql` ใหม่เพื่อปิด anon insert  
-> **Sheets:** แอดมินอัปเดต/เคลม/โหวต จะ `mirrorUpdate` ไปชีต (Deploy Code.gs ที่มี action นี้)
+> **Rate limit:** มี Upstash → ใช้ Redis · ถ้า Redis ล่มจะปฏิเสธชั่วคราว (ไม่ตกไปหน่วยความจำ) · ไม่มี Upstash → หน่วยความจำต่อ instance  
+> **รูป:** อัปผ่าน `/api/upload` (service role) รับเฉพาะ jpg/png/webp ที่ตรง magic bytes — รัน `storage-rls.sql` ใหม่เพื่อปิด anon insert และใน Supabase Storage จำกัด MIME ของ bucket `udfondue-images` เป็น `image/jpeg`, `image/png`, `image/webp`  
+> **Sheets:** แอดมินอัปเดต/เคลม จะ `mirrorUpdate` ไปชีต · โหวต mirror อย่างมากทุก 3 นาทีต่อเรื่อง  
+> **แอดมิน:** `ADMIN_SESSION_SECRET` ต้องยาวอย่างน้อย 16 ตัวอักษร ระบบไม่มีรหัสสำรองแล้ว
 
 ## 2) Supabase Storage + Tickets
 
@@ -48,13 +49,20 @@
 
 1. คัดลอก `Code.gs` ล่าสุด → Deploy → **New version**
 2. ใส่ Web App URL ใน `GAS_WEB_APP_URL`
-3. Script Properties (Project Settings → Script properties):
+3. Script Properties (Project Settings → Script properties) — **ตั้งก่อน Deploy เวอร์ชันนี้** เพราะ ID ถูกย้ายออกจากโค้ดแล้ว:
    - **`GAS_API_KEY`** = ค่าเดียวกับ Vercel `GAS_API_KEY` (บังคับ — ไม่มีแล้วเรียก GAS ไม่ได้)
-   - **`ADMIN_PASSWORD`** = รหัสแอดมิน (ย้ายออกจากโค้ดแล้ว · ให้ตรง `ADMIN_PIN` บน Vercel)
+   - **`ADMIN_PASSWORD`** = รหัสแอดมิน (ให้ตรง `ADMIN_PIN` บน Vercel)
+   - **`SPREADSHEET_ID`** = ID สเปรดชีตเดิม (ค่าที่เคยอยู่ใน `Code.gs`)
+   - **`DRIVE_FOLDER_ID`** = ID โฟลเดอร์รูปเดิม (ค่าที่เคยอยู่ใน `Code.gs`)
    - **`LINE_CHANNEL_ACCESS_TOKEN`** = Channel access token (**จำเป็นสำหรับ push ไปกลุ่ม** จาก GAS)
+   - **`LINE_TEST_USER_ID`** = LINE userId สำหรับฟังก์ชัน `testLinePush` (ไม่ใส่ในโค้ดแล้ว)
    - (ถ้าใช้กลุ่ม) `GROUP_ID_FACILITY`, `GROUP_ID_LOST_FOUND`, `GROUP_ID_COUNCIL`, `GROUP_ID_GENERAL`
-4. รัน `authorizeLinePush` หรือ `testLinePush` ใน Editor ครั้งหนึ่ง แล้ว Deploy New version อีกครั้ง
-5. ถ้า URL Web App เคยเปิดสาธารณะนาน — พิจารณา Deploy ใหม่แล้วอัปเดต URL
+   - (ไม่บังคับ) `DRIVE_SHARE_ANYONE=1` ถ้าต้องการให้รูปที่อัปผ่าน GAS ลิงก์แบบใครมีลิงก์ก็เปิดได้ — ค่าเริ่มต้นคือไฟล์ส่วนตัว
+4. สิทธิ์ OAuth ใน `appsscript.json` เหลือ `drive.file` แทน `drive` ทั้งบัญชี หลังวางโค้ดใหม่ให้ Authorize ใหม่  
+   ถ้าโฟลเดอร์รูปเดิมไม่ได้ถูกสร้างโดยสคริปต์นี้ `getFolderById` อาจใช้ไม่ได้ — รูปหลักอยู่ที่ Supabase อยู่แล้ว ชีตยังใช้ scope `spreadsheets` ตามเดิม  
+   ถ้าจำเป็นต้องเปิดโฟลเดอร์เดิมจริง ๆ ให้ใส่ scope `https://www.googleapis.com/auth/drive` กลับชั่วคราว
+5. รัน `authorizeLinePush` หรือ `testLinePush` ใน Editor ครั้งหนึ่ง แล้ว Deploy New version อีกครั้ง
+6. ถ้า URL Web App เคยเปิดสาธารณะนาน — พิจารณา Deploy ใหม่แล้วอัปเดต URL
 
 ## 4) LINE LIFF
 

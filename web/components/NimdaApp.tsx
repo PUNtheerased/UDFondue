@@ -66,6 +66,7 @@ export function NimdaApp() {
   const [authed, setAuthed] = useState(false);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState("");
+  const [loginBusy, setLoginBusy] = useState(false);
   const [mode, setMode] = useState<"admin" | "dev">("admin");
   const [devPin, setDevPin] = useState("");
   const [showDevPin, setShowDevPin] = useState(false);
@@ -100,8 +101,9 @@ export function NimdaApp() {
       setAuthed(true);
     } catch (err) {
       if (!silent) {
-        setLoginError(err instanceof Error ? err.message : "โหลดไม่สำเร็จ");
         setAuthed(false);
+        const msg = err instanceof Error ? err.message : "โหลดไม่สำเร็จ";
+        if (msg !== "เข้าสู่ระบบก่อน") setLoginError(msg);
       }
     } finally {
       if (!silent) setBusy(false);
@@ -114,19 +116,26 @@ export function NimdaApp() {
 
   async function login() {
     setLoginError("");
-    const res = await fetch("/api/admin/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password })
-    });
-    const data = await res.json();
-    if (data.status !== "success") {
-      setLoginError(data.message || "เข้าสู่ระบบไม่สำเร็จ");
-      return;
+    setLoginBusy(true);
+    try {
+      const res = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password })
+      });
+      const data = await res.json();
+      if (data.status !== "success") {
+        setLoginError(data.message || "เข้าสู่ระบบไม่สำเร็จ");
+        return;
+      }
+      setMode("admin");
+      setAuthed(true);
+      await load();
+    } catch {
+      setLoginError("เข้าสู่ระบบไม่สำเร็จ");
+    } finally {
+      setLoginBusy(false);
     }
-    setMode("admin");
-    setAuthed(true);
-    await load();
   }
 
   async function switchMode(next: "admin" | "dev") {
@@ -444,21 +453,31 @@ export function NimdaApp() {
         <div className="bg-white rounded-3xl shadow-xl w-full max-w-sm p-8 space-y-4">
           <h1 className="text-xl font-bold text-center">สำหรับครู / เจ้าหน้าที่</h1>
           <p className="text-xs text-gray-500 text-center">ดูคิว คุมสถานะ และดำเนินการต่อ</p>
-          <input
-            type="password"
-            className="w-full border rounded-xl px-3 py-3"
-            placeholder="รหัสผ่าน"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && login()}
-          />
-          {loginError && <p className="text-sm text-red-600 text-center">{loginError}</p>}
+          <label className="block text-sm space-y-1">
+            <span className="font-medium text-slate-700">รหัสผ่าน</span>
+            <input
+              type="password"
+              className="w-full border rounded-xl px-3 py-3"
+              placeholder="รหัสผ่าน"
+              autoComplete="current-password"
+              aria-invalid={loginError ? true : undefined}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && login()}
+            />
+          </label>
+          {loginError && (
+            <p role="alert" aria-live="assertive" className="text-sm text-red-600 text-center">
+              {loginError}
+            </p>
+          )}
           <button
             type="button"
-            className="w-full bg-blue-800 text-white py-3 rounded-xl font-semibold"
+            className="w-full bg-blue-800 text-white py-3 min-h-12 rounded-xl font-semibold disabled:opacity-60"
             onClick={login}
+            disabled={loginBusy}
           >
-            เข้าสู่ระบบ
+            {loginBusy ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบ"}
           </button>
         </div>
       </div>
@@ -477,6 +496,7 @@ export function NimdaApp() {
             <div className="flex rounded-lg overflow-hidden border border-white/30 text-sm">
               <button
                 type="button"
+                aria-pressed={mode === "admin"}
                 className={`px-3 py-1.5 ${mode === "admin" ? "bg-white text-blue-900" : "bg-white/10"}`}
                 onClick={() => switchMode("admin")}
               >
@@ -484,6 +504,7 @@ export function NimdaApp() {
               </button>
               <button
                 type="button"
+                aria-pressed={mode === "dev"}
                 className={`px-3 py-1.5 ${mode === "dev" ? "bg-amber-300 text-amber-950" : "bg-white/10"}`}
                 onClick={() => switchMode("dev")}
               >
@@ -492,6 +513,7 @@ export function NimdaApp() {
             </div>
             <button
               type="button"
+              aria-pressed={view === "table"}
               className={`px-3 py-1.5 rounded-lg text-sm ${view === "table" ? "bg-white text-blue-900" : "bg-white/20"}`}
               onClick={() => setView("table")}
             >
@@ -499,6 +521,7 @@ export function NimdaApp() {
             </button>
             <button
               type="button"
+              aria-pressed={view === "kanban"}
               className={`px-3 py-1.5 rounded-lg text-sm ${view === "kanban" ? "bg-white text-blue-900" : "bg-white/20"}`}
               onClick={() => setView("kanban")}
             >
@@ -550,6 +573,7 @@ export function NimdaApp() {
           <div className="flex flex-col sm:flex-row gap-2">
             <select
               className="border rounded-xl px-3 py-2 bg-white"
+              aria-label="กรองตามสถานะ"
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
             >
@@ -562,6 +586,7 @@ export function NimdaApp() {
             </select>
             <input
               className="flex-1 border rounded-xl px-3 py-2"
+              aria-label="ค้นหาเรื่อง"
               placeholder="ค้นหาเลขที่ / รายละเอียด / อาคาร"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -794,9 +819,9 @@ export function NimdaApp() {
                 <p className="text-xs font-semibold text-slate-500 mb-2">รูปที่แนบมา</p>
                 <div className="flex flex-wrap gap-2">
                   {imageList(selected.imageUrl).map((u) => (
-                    // eslint-disable-next-line @next/next/no-img-element
                     <a key={u} href={u} target="_blank" rel="noreferrer">
-                      <img src={u} alt="" className="w-24 h-24 object-cover rounded-xl border" />
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={u} alt="รูปที่นักเรียนแนบ" className="w-24 h-24 object-cover rounded-xl border" />
                     </a>
                   ))}
                 </div>
@@ -842,6 +867,8 @@ export function NimdaApp() {
               </section>
             )}
 
+            <label className="block text-sm space-y-1">
+              <span className="font-medium text-slate-700">สถานะ</span>
             <select
               className="w-full border rounded-xl px-3 py-2"
               value={editStatus}
@@ -853,6 +880,9 @@ export function NimdaApp() {
                 </option>
               ))}
             </select>
+            </label>
+            <label className="block text-sm space-y-1">
+              <span className="font-medium text-slate-700">ข้อความถึงนักเรียน</span>
             <textarea
               className="w-full border rounded-xl px-3 py-2"
               rows={3}
@@ -860,13 +890,14 @@ export function NimdaApp() {
               value={editNote}
               onChange={(e) => setEditNote(e.target.value)}
             />
+            </label>
             <div>
               <p className="text-sm font-semibold mb-1">รูปหลังดำเนินการ</p>
-              <input type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(e) => onAfterFiles(e.target.files)} />
+              <input aria-label="รูปหลังดำเนินการ" type="file" accept="image/png,image/jpeg,image/webp" multiple onChange={(e) => onAfterFiles(e.target.files)} />
               <div className="flex flex-wrap gap-2 mt-2">
                 {afterUrls.map((u) => (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img key={u} src={u} alt="" className="w-20 h-20 object-cover rounded-lg border" />
+                  <img key={u} src={u} alt="รูปหลังดำเนินการ" className="w-20 h-20 object-cover rounded-lg border" />
                 ))}
               </div>
             </div>
@@ -931,7 +962,7 @@ export function NimdaApp() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full z-[60]">
+        <div role="status" aria-live="polite" className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full z-[60]">
           {toast}
         </div>
       )}
