@@ -48,6 +48,13 @@ type ZoneIssue = {
   upvoteCount?: number;
 };
 
+function imageStatusLabel(status: UploadedImage["status"]) {
+  if (status === "uploading") return "กำลังอัปโหลด";
+  if (status === "done") return "อัปโหลดแล้ว";
+  if (status === "error") return "อัปโหลดไม่สำเร็จ";
+  return "รออัปโหลด";
+}
+
 function generateSubmitId() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   let code = "";
@@ -94,6 +101,7 @@ export function ReportForm() {
   const [trackUrl, setTrackUrl] = useState("");
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
   const [pendingDraft, setPendingDraft] = useState<FormDraft | null>(null);
 
   const isMainBuilding = isMainClassroomBuilding(building);
@@ -459,11 +467,15 @@ export function ReportForm() {
       return;
     }
     if (images.some((img) => img.status === "error")) {
-      setError("มีรูปอัปไม่สำเร็จ — กด Retry ก่อนส่ง");
+      setError("มีรูปอัปไม่สำเร็จ — กดลองใหม่ก่อนส่ง");
       return;
     }
     if (!turnstileToken) {
       setError("ยืนยันว่าไม่ใช่บอทก่อนส่ง");
+      return;
+    }
+    if (!privacyAccepted) {
+      setError("กรุณายอมรับประกาศความเป็นส่วนตัวก่อนส่ง");
       return;
     }
 
@@ -509,7 +521,7 @@ export function ReportForm() {
   if (successId) {
     return (
       <div className="min-h-dvh flex items-center justify-center px-4 pb-safe">
-        <div className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
+        <div role="status" aria-live="polite" className="bg-white rounded-3xl shadow-xl w-full max-w-md p-8 text-center">
           <div className="text-4xl text-blue-800 mb-3">✓</div>
           <h2 className="text-xl font-bold text-blue-900">รับเรื่องเรียบร้อยแล้ว</h2>
           <p className="text-sm text-gray-500 mt-2">รับเรื่องแล้ว — เก็บเลขนี้ไว้ติดตามได้</p>
@@ -537,7 +549,7 @@ export function ReportForm() {
           </div>
         </div>
         {toast && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full">
+          <div role="status" aria-live="polite" className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full">
             {toast}
           </div>
         )}
@@ -625,6 +637,7 @@ export function ReportForm() {
       <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-8 text-center">
         <h1 className="text-2xl font-bold">UDFondue</h1>
         <p className="text-sm text-blue-100 mt-1">แจ้งปัญหา ของหาย หรือความคิดเห็นได้ที่นี่</p>
+        <p className="text-xs text-blue-100 mt-2">ขั้นที่ {step} จาก 3</p>
         <nav className="mt-5 flex items-stretch justify-center gap-1 sm:gap-2" aria-label="ขั้นตอนกรอกฟอร์ม">
           {(
             [
@@ -726,21 +739,30 @@ export function ReportForm() {
         </nav>
       </header>
 
-      <main className="flex-1 max-w-2xl w-full mx-auto px-4 py-5 space-y-4">
+      <main aria-busy={loading} className="flex-1 max-w-2xl w-full mx-auto px-4 py-5 space-y-4">
         {error && (
-          <div className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">{error}</div>
+          <div role="alert" aria-live="assertive" className="bg-red-50 text-red-700 text-sm rounded-xl px-4 py-3">
+            {error}
+          </div>
+        )}
+        {loading && (
+          <div role="status" aria-live="polite" className="bg-blue-50 text-blue-900 text-sm rounded-xl px-4 py-3">
+            {loadingMsg || "กำลังส่งเรื่อง..."}
+          </div>
         )}
 
         {step === 1 && (
-          <section className="bg-white rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">เลือกประเภทเรื่อง</h2>
-            <div className="grid gap-2">
+          <section className="bg-white rounded-2xl p-4 space-y-3" aria-labelledby="step-1-title">
+            <h2 id="step-1-title" className="font-bold">เลือกประเภทเรื่อง</h2>
+            <p className="text-sm text-slate-500">เลือกอย่างใดอย่างหนึ่ง แล้วไปขั้นถัดไป</p>
+            <div className="grid gap-2" role="group" aria-label="ประเภทเรื่อง">
               {CATEGORIES.map((c) => (
                 <button
                   key={c.value}
                   type="button"
+                  aria-pressed={category === c.value}
                   onClick={() => setCategory(c.value)}
-                  className={`text-left px-4 py-3 rounded-xl border-2 ${
+                  className={`text-left px-4 py-3 min-h-12 rounded-xl border-2 ${
                     category === c.value ? "border-blue-800 bg-blue-50" : "border-gray-200"
                   }`}
                 >
@@ -749,16 +771,20 @@ export function ReportForm() {
               ))}
             </div>
             {category === "อื่นๆ" && (
-              <input
-                className="w-full border rounded-xl px-3 py-2"
-                placeholder="ระบุหัวข้อเอง"
-                value={otherCategory}
-                onChange={(e) => setOtherCategory(e.target.value)}
-              />
+              <label className="block text-sm space-y-1">
+                <span className="font-medium text-slate-700">หัวข้อที่ต้องการแจ้ง</span>
+                <input
+                  className="w-full border rounded-xl px-3 py-3"
+                  placeholder="ระบุหัวข้อเอง"
+                  value={otherCategory}
+                  onChange={(e) => setOtherCategory(e.target.value)}
+                />
+              </label>
             )}
+            {!category && <p className="text-xs text-slate-500">เลือกประเภทก่อนไปขั้นถัดไป</p>}
             <button
               type="button"
-              className="w-full bg-blue-800 text-white py-3 rounded-xl font-semibold"
+              className="w-full bg-blue-800 text-white py-3 min-h-12 rounded-xl font-semibold"
               onClick={() => setStep(2)}
               disabled={!category}
             >
@@ -768,25 +794,33 @@ export function ReportForm() {
         )}
 
         {step === 2 && (
-          <section className="bg-white rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">รายละเอียดและสถานที่</h2>
+          <section className="bg-white rounded-2xl p-4 space-y-3" aria-labelledby="step-2-title">
+            <h2 id="step-2-title" className="font-bold">รายละเอียดและสถานที่</h2>
+            <p className="text-sm text-slate-500">บอกว่าเกิดอะไร และอยู่ตรงไหน เพื่อให้เจ้าหน้าที่หาจุดได้</p>
             {category !== "ตามหาของหาย" && (
-              <textarea
-                className="w-full border rounded-xl px-3 py-2 min-h-[100px]"
-                placeholder="อธิบายรายละเอียด เช่น สิ่งที่พบ หรือข้อเสนอแนะ..."
-                value={detail}
-                onChange={(e) => setDetail(e.target.value)}
-              />
+              <label className="block text-sm space-y-1">
+                <span className="font-medium text-slate-700">รายละเอียด</span>
+                <textarea
+                  className="w-full border rounded-xl px-3 py-3 min-h-[100px]"
+                  placeholder="อธิบายรายละเอียด เช่น สิ่งที่พบ หรือข้อเสนอแนะ..."
+                  value={detail}
+                  onChange={(e) => setDetail(e.target.value)}
+                  maxLength={4000}
+                />
+              </label>
             )}
             {category === "ปัญหาที่พบ" && (
-              <select
-                className="w-full border rounded-xl px-3 py-2"
-                value={urgency}
-                onChange={(e) => setUrgency(e.target.value)}
-              >
-                <option value="ปกติ">ความเร่งด่วน: ปกติ</option>
-                <option value="เร่งด่วน">เร่งด่วน (เช่น น้ำรั่ว ไฟตก)</option>
-              </select>
+              <label className="block text-sm space-y-1">
+                <span className="font-medium text-slate-700">ความเร่งด่วน</span>
+                <select
+                  className="w-full border rounded-xl px-3 py-3"
+                  value={urgency}
+                  onChange={(e) => setUrgency(e.target.value)}
+                >
+                  <option value="ปกติ">ปกติ</option>
+                  <option value="เร่งด่วน">เร่งด่วน (เช่น น้ำรั่ว ไฟตก)</option>
+                </select>
+              </label>
             )}
             <BuildingPicker
               value={building}
@@ -803,36 +837,48 @@ export function ReportForm() {
             />
             {building && isMainBuilding ? (
               <div className="flex gap-2">
-                <select
-                  className="w-1/2 border rounded-xl px-3 py-2"
-                  value={zone}
-                  onChange={(e) => setZone(e.target.value)}
-                >
-                  <option value="">เลือกชั้น</option>
-                  {floorChoices.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="w-1/2 border rounded-xl px-3 py-2"
-                  placeholder={roomPlaceholder}
-                  value={locationNote}
-                  onChange={(e) => setLocationNote(e.target.value)}
-                  disabled={!zone}
-                />
+                <label className="w-1/2 text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ชั้น</span>
+                  <select
+                    className="w-full border rounded-xl px-3 py-3"
+                    value={zone}
+                    onChange={(e) => setZone(e.target.value)}
+                  >
+                    <option value="">เลือกชั้น</option>
+                    {floorChoices.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="w-1/2 text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ห้องหรือจุดสังเกต</span>
+                  <input
+                    className="w-full border rounded-xl px-3 py-3"
+                    placeholder={roomPlaceholder}
+                    aria-label="ห้องหรือจุดสังเกต"
+                    value={locationNote}
+                    onChange={(e) => setLocationNote(e.target.value)}
+                    disabled={!zone}
+                    maxLength={200}
+                  />
+                </label>
               </div>
             ) : building ? (
-              <input
-                className="w-full border rounded-xl px-3 py-2"
-                placeholder="โปรดระบุ"
-                value={locationNote}
-                onChange={(e) => setLocationNote(e.target.value)}
-                required
-              />
+              <label className="block text-sm space-y-1">
+                <span className="font-medium text-slate-700">จุดที่พบ</span>
+                <input
+                  className="w-full border rounded-xl px-3 py-3"
+                  placeholder="โปรดระบุ"
+                  value={locationNote}
+                  onChange={(e) => setLocationNote(e.target.value)}
+                  maxLength={200}
+                  required
+                />
+              </label>
             ) : null}
-            <button type="button" className="text-sm text-blue-800 underline" onClick={useGps}>
+            <button type="button" className="text-sm text-blue-800 underline min-h-11 text-left" onClick={useGps}>
               ใช้ตำแหน่งปัจจุบัน (ไม่บังคับ)
             </button>
             {(gpsLat || gpsLng) && (
@@ -868,46 +914,71 @@ export function ReportForm() {
             {category === "ตามหาของหาย" && (
               <div className="space-y-2 border-t pt-3">
                 <p className="font-semibold text-sm">ข้อมูลของหาย</p>
-                <select
-                  className="w-full border rounded-xl px-3 py-2"
-                  value={lfType}
-                  onChange={(e) => {
-                    const next = e.target.value;
-                    setLfType(next);
-                    if (next !== "แจ้งพบของหาย") setLfReturnPoint("");
-                  }}
-                >
-                  <option value="">ประเภท</option>
-                  <option value="แจ้งทำของหาย">แจ้งทำของหาย</option>
-                  <option value="แจ้งพบของหาย">แจ้งพบของหาย</option>
-                </select>
-                {(lfType === "แจ้งทำของหาย" || lfType === "แจ้งพบของหาย") && (
-                  <textarea
-                    className="w-full border rounded-xl px-3 py-2 min-h-[88px]"
-                    placeholder="อธิบายลักษณะสิ่งของ เช่น รูปร่าง/สี"
-                    value={detail}
-                    onChange={(e) => setDetail(e.target.value)}
-                  />
-                )}
-                <input
-                  type="datetime-local"
-                  className="w-full border rounded-xl px-3 py-2"
-                  value={lfWhen}
-                  onChange={(e) => setLfWhen(e.target.value)}
-                />
-                {lfType === "แจ้งพบของหาย" && (
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ประเภท</span>
                   <select
-                    className="w-full border rounded-xl px-3 py-2"
-                    value={lfReturnPoint}
-                    onChange={(e) => setLfReturnPoint(e.target.value)}
+                    className="w-full border rounded-xl px-3 py-3"
+                    value={lfType}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setLfType(next);
+                      if (next !== "แจ้งพบของหาย") setLfReturnPoint("");
+                    }}
                   >
-                    <option value="">จุดรับคืน</option>
-                    {LF_RETURN_POINTS.map((p) => (
-                      <option key={p} value={p}>
-                        {p}
-                      </option>
-                    ))}
+                    <option value="">เลือกประเภท</option>
+                    <option value="แจ้งทำของหาย">แจ้งทำของหาย</option>
+                    <option value="แจ้งพบของหาย">แจ้งพบของหาย</option>
                   </select>
+                </label>
+                {(lfType === "แจ้งทำของหาย" || lfType === "แจ้งพบของหาย") && (
+                  <label className="block text-sm space-y-1">
+                    <span className="font-medium text-slate-700">ลักษณะสิ่งของ</span>
+                    <textarea
+                      className="w-full border rounded-xl px-3 py-3 min-h-[88px]"
+                      placeholder="อธิบายลักษณะสิ่งของ เช่น รูปร่าง/สี"
+                      value={detail}
+                      onChange={(e) => setDetail(e.target.value)}
+                      maxLength={4000}
+                    />
+                  </label>
+                )}
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">วันเวลาที่หายหรือพบ</span>
+                  <input
+                    type="datetime-local"
+                    className="w-full border rounded-xl px-3 py-3"
+                    value={lfWhen}
+                    onChange={(e) => setLfWhen(e.target.value)}
+                  />
+                </label>
+                {lfType === "แจ้งพบของหาย" && (
+                  <label className="block text-sm space-y-1">
+                    <span className="font-medium text-slate-700">จุดรับคืน</span>
+                    <select
+                      className="w-full border rounded-xl px-3 py-3"
+                      value={lfReturnPoint}
+                      onChange={(e) => setLfReturnPoint(e.target.value)}
+                    >
+                      <option value="">เลือกจุดรับคืน</option>
+                      {LF_RETURN_POINTS.map((p) => (
+                        <option key={p} value={p}>
+                          {p}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {lfType === "แจ้งทำของหาย" && (
+                  <label className="block text-sm space-y-1">
+                    <span className="font-medium text-slate-700">รายละเอียดลับสำหรับยืนยันเจ้าของ</span>
+                    <textarea
+                      className="w-full border rounded-xl px-3 py-3 min-h-[72px]"
+                      placeholder="เช่น รอยขีดข่วน หรือสิ่งที่อยู่ในกระเป๋า — ไม่แสดงบนกระดานสาธารณะ"
+                      value={lfSecretDetail}
+                      onChange={(e) => setLfSecretDetail(e.target.value)}
+                      maxLength={500}
+                    />
+                  </label>
                 )}
                 <label className="flex items-center gap-2 text-sm">
                   <input
@@ -921,12 +992,12 @@ export function ReportForm() {
             )}
 
             <div className="flex gap-2">
-              <button type="button" className="flex-1 border py-3 rounded-xl" onClick={() => setStep(1)}>
+              <button type="button" className="flex-1 border py-3 min-h-12 rounded-xl" onClick={() => setStep(1)}>
                 ย้อนกลับ
               </button>
               <button
                 type="button"
-                className="flex-1 bg-blue-800 text-white py-3 rounded-xl font-semibold"
+                className="flex-1 bg-blue-800 text-white py-3 min-h-12 rounded-xl font-semibold"
                 onClick={() => setStep(3)}
               >
                 ถัดไป
@@ -936,8 +1007,18 @@ export function ReportForm() {
         )}
 
         {step === 3 && (
-          <section className="bg-white rounded-2xl p-4 space-y-3">
-            <h2 className="font-bold">ตัวตนและรูปภาพ</h2>
+          <section className="bg-white rounded-2xl p-4 space-y-3" aria-labelledby="step-3-title">
+            <h2 id="step-3-title" className="font-bold">ตัวตนและรูปภาพ</h2>
+            <p className="text-sm text-slate-500">ตรวจข้อมูล แนบรูป แล้วยืนยันก่อนส่ง</p>
+            <div className="rounded-xl bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600 leading-relaxed space-y-2">
+              <p className="font-semibold text-slate-800">ประกาศความเป็นส่วนตัว (PDPA)</p>
+              <p>
+                ระบบนี้เก็บบัญชี LINE, รายละเอียดเรื่อง, รูปภาพ และตำแหน่งถ้าระบุ
+                เพื่อให้สภานักเรียนและครูที่ดูแลดำเนินการเรื่องที่แจ้งเท่านั้น
+                ถ้าไม่เลือกไม่ระบุตัวตน จะเก็บชื่อ ห้อง และเลขที่ด้วย
+                ข้อมูลไม่ถูกใช้เพื่อการตลาด สามารถขอให้ลบข้อมูลได้โดยติดต่อสภานักเรียนหรือครูที่ดูแลระบบ
+              </p>
+            </div>
             <label className="flex items-start gap-2 text-sm bg-gray-50 rounded-xl p-3">
               <input
                 type="checkbox"
@@ -945,29 +1026,45 @@ export function ReportForm() {
                 onChange={(e) => setIsAnonymous(e.target.checked)}
                 className="mt-1"
               />
-              <span>แจ้งแบบไม่ระบุชื่อ</span>
+              <span>แจ้งแบบไม่ระบุชื่อ (ชื่อ ห้อง และเลขที่จะไม่ถูกแสดง)</span>
             </label>
             {!isAnonymous && (
               <>
-                <input className="w-full border rounded-xl px-3 py-2 bg-gray-50" value={name} readOnly />
-                <input
-                  className="w-full border rounded-xl px-3 py-2"
-                  placeholder="ห้อง เช่น 5/6"
-                  value={room}
-                  onChange={(e) => setRoom(e.target.value)}
-                />
-                <input
-                  className="w-full border rounded-xl px-3 py-2"
-                  placeholder="เลขที่"
-                  value={studentNo}
-                  onChange={(e) => setStudentNo(e.target.value)}
-                />
-                <input
-                  className="w-full border rounded-xl px-3 py-2"
-                  placeholder="ช่องทางติดต่อกลับ (ไม่บังคับ)"
-                  value={contactOptional}
-                  onChange={(e) => setContactOptional(e.target.value)}
-                />
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ชื่อจาก LINE</span>
+                  <input className="w-full border rounded-xl px-3 py-3 bg-gray-50" value={name} readOnly aria-readonly="true" />
+                </label>
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ห้อง</span>
+                  <input
+                    className="w-full border rounded-xl px-3 py-3"
+                    placeholder="เช่น 5/6"
+                    value={room}
+                    onChange={(e) => setRoom(e.target.value)}
+                    maxLength={32}
+                  />
+                </label>
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">เลขที่</span>
+                  <input
+                    className="w-full border rounded-xl px-3 py-3"
+                    placeholder="เลขที่"
+                    value={studentNo}
+                    onChange={(e) => setStudentNo(e.target.value)}
+                    maxLength={16}
+                    inputMode="numeric"
+                  />
+                </label>
+                <label className="block text-sm space-y-1">
+                  <span className="font-medium text-slate-700">ช่องทางติดต่อกลับ (ไม่บังคับ)</span>
+                  <input
+                    className="w-full border rounded-xl px-3 py-3"
+                    placeholder="เช่น เบอร์หรือไอดีที่ติดต่อได้"
+                    value={contactOptional}
+                    onChange={(e) => setContactOptional(e.target.value)}
+                    maxLength={160}
+                  />
+                </label>
               </>
             )}
 
@@ -975,21 +1072,26 @@ export function ReportForm() {
               <p className="text-sm font-semibold mb-1">แนบรูป (สูงสุด 5)</p>
               <p className="text-xs text-gray-500 mb-2">
                 โปรดหลีกเลี่ยงการถ่ายติดใบหน้าของบุคคลอื่นโดยไม่ได้รับอนุญาต เพื่อรักษาความเป็นส่วนตัว
+                รับเฉพาะ jpg, png หรือ webp
               </p>
-              <input
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                multiple
-                onChange={(e) => {
-                  onPickFiles(e.target.files);
-                  e.target.value = "";
-                }}
-              />
+              <label className="block text-sm">
+                <span className="sr-only">เลือกรูปภาพ</span>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  multiple
+                  className="block w-full"
+                  onChange={(e) => {
+                    onPickFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
               <div className="grid grid-cols-3 gap-2 mt-3">
                 {images.map((img) => (
                   <div key={img.id} className="relative rounded-xl overflow-hidden border bg-gray-100">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={img.preview} alt="" className="w-full h-24 object-cover" />
+                    <img src={img.preview} alt={`รูปที่แนบ ${images.indexOf(img) + 1}`} className="w-full h-24 object-cover" />
                     <button
                       type="button"
                       aria-label="ลบรูป"
@@ -999,7 +1101,7 @@ export function ReportForm() {
                       ×
                     </button>
                     <div className="absolute inset-x-0 bottom-0 bg-black/50 text-white text-[10px] px-1 py-0.5">
-                      {img.status}
+                      {imageStatusLabel(img.status)}
                     </div>
                     {img.status === "error" && (
                       <button
@@ -1010,7 +1112,7 @@ export function ReportForm() {
                           setImages((prev) => prev.map((x) => (x.id === img.id ? result : x)));
                         }}
                       >
-                        Retry
+                        ลองใหม่
                       </button>
                     )}
                   </div>
@@ -1020,13 +1122,23 @@ export function ReportForm() {
 
             <TurnstileWidget ref={turnstileRef} onToken={setTurnstileToken} />
 
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={privacyAccepted}
+                onChange={(e) => setPrivacyAccepted(e.target.checked)}
+              />
+              <span>ฉันเข้าใจและยินยอมให้ใช้ข้อมูลข้างต้นเพื่อดำเนินการเรื่องที่แจ้ง</span>
+            </label>
+
             <div className="flex gap-2 pb-4">
-              <button type="button" className="flex-1 border py-3 rounded-xl" onClick={() => setStep(2)}>
+              <button type="button" className="flex-1 border py-3 min-h-12 rounded-xl" onClick={() => setStep(2)} disabled={loading}>
                 ย้อนกลับ
               </button>
               <button
                 type="button"
-                className="flex-1 bg-blue-800 text-white py-3 rounded-xl font-semibold disabled:opacity-60"
+                className="flex-1 bg-blue-800 text-white py-3 min-h-12 rounded-xl font-semibold disabled:opacity-60"
                 disabled={loading}
                 onClick={submitForm}
               >
@@ -1038,7 +1150,7 @@ export function ReportForm() {
       </main>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full z-50">
+        <div role="status" aria-live="polite" className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-sm px-4 py-2 rounded-full z-50">
           {toast}
         </div>
       )}

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertDevMode, getAdminSession, getNimdaMode } from "@/lib/adminSession";
+import { publicMessage } from "@/lib/publicMessage";
 import { callGas } from "@/lib/gas";
 import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { notifyLine } from "@/lib/notifyLine";
@@ -154,7 +155,9 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Admin update failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "บันทึกไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

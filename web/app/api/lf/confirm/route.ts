@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyLineIdToken } from "@/lib/lineAuth";
+import { publicMessage } from "@/lib/publicMessage";
 import { mirrorTicketToSheet } from "@/lib/mirrorSheet";
 import { notifyLine } from "@/lib/notifyLine";
-import { rateLimit } from "@/lib/rateLimit";
+import { rateLimit, rateLimitMessage, rateLimitStatus } from "@/lib/rateLimit";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { confirmHandoffCode, getTicketBySubmitId } from "@/lib/ticketsDb";
 
@@ -19,7 +20,10 @@ export async function POST(req: NextRequest) {
     }
     const rl = await rateLimit(`lf-confirm:${lineAuth.sub}`, 12, 10 * 60 * 1000);
     if (!rl.ok) {
-      return NextResponse.json({ status: "error", message: "ลองบ่อยเกินไป" }, { status: 429 });
+      return NextResponse.json(
+        { status: "error", message: rateLimitMessage(rl, "ลองบ่อยเกินไป") },
+        { status: rateLimitStatus(rl) }
+      );
     }
 
     const submitId = String(body.submitId || body.foundSubmitId || "");
@@ -53,7 +57,7 @@ export async function POST(req: NextRequest) {
       report: ticket ? { submitId: ticket.submit_id, status: ticket.status } : null
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Confirm failed";
-    return NextResponse.json({ status: "error", message }, { status: 400 });
+    const message = publicMessage(err, "ยืนยันรหัสไม่สำเร็จ");
+    return NextResponse.json({ status: "error", message }, { status: message === "ยืนยันรหัสไม่สำเร็จ" ? 500 : 400 });
   }
 }

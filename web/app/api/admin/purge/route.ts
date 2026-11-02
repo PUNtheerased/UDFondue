@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertDevMode, getAdminSession } from "@/lib/adminSession";
+import { publicMessage } from "@/lib/publicMessage";
 import { callGas } from "@/lib/gas";
 import { getSupabaseAdmin, isTicketsDbReady } from "@/lib/supabaseAdmin";
 
@@ -72,11 +73,7 @@ export async function POST(req: NextRequest) {
         }
       } catch (err) {
         console.error("purge sheet", err);
-        warnings.push(
-          err instanceof Error
-            ? `ล้างชีตไม่สำเร็จ: ${err.message}`
-            : "ล้างชีตไม่สำเร็จ"
-        );
+        warnings.push(publicMessage(err, "ล้างชีตไม่สำเร็จ"));
       }
     }
 
@@ -90,7 +87,9 @@ export async function POST(req: NextRequest) {
       warnings
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Purge failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "ล้างข้อมูลไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

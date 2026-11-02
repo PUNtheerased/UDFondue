@@ -2,20 +2,29 @@ import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { verifyLineIdToken } from "@/lib/lineAuth";
-import { rateLimit } from "@/lib/rateLimit";
+import { getClientIp } from "@/lib/clientIp";
 import { containsProfanity } from "@/lib/profanity";
+import { publicMessage } from "@/lib/publicMessage";
+import { rateLimit, rateLimitMessage, rateLimitStatus } from "@/lib/rateLimit";
+import { parseSubmitBody } from "@/lib/submitValidation";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
-import { createTicket } from "@/lib/ticketsDb";
+import { createTicket, getTicketBySubmitId } from "@/lib/ticketsDb";
 import { notifyLine } from "@/lib/notifyLine";
 
 export const runtime = "nodejs";
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const body = await req.json().catch(() => null);
+    const parsed = parseSubmitBody(body);
+    if (!parsed.ok) {
+      return NextResponse.json({ status: "error", message: parsed.message }, { status: 400 });
+    }
+    const fields = parsed.value;
+    const ip = getClientIp(req.headers);
+    const source = (body || {}) as Record<string, unknown>;
 
-    const turnstile = await verifyTurnstile(String(body.turnstileToken || ""), ip);
+    const turnstile = await verifyTurnstile(String(source.turnstileToken || ""), ip);
     if (!turnstile.ok) {
       return NextResponse.json(
         { status: "error", message: turnstile.message, code: "TURNSTILE" },
@@ -23,7 +32,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const idToken = String(body.idToken || "");
+    const idToken = String(source.idToken || "");
     const lineAuth = await verifyLineIdToken(idToken);
     if (!lineAuth.ok) {
       return NextResponse.json(
@@ -33,20 +42,40 @@ export async function POST(req: NextRequest) {
     }
 
     const rlIp = await rateLimit(`submit:ip:${ip}`, 12, 10 * 60 * 1000);
-    const rlLine = await rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
-    if (!rlIp.ok || !rlLine.ok) {
+    if (!rlIp.ok) {
       return NextResponse.json(
-        { status: "error", message: "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่", code: "RATE_LIMIT" },
-        { status: 429 }
+        {
+          status: "error",
+          message: rateLimitMessage(rlIp, "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่"),
+          code: "RATE_LIMIT"
+        },
+        { status: rateLimitStatus(rlIp) }
+      );
+    }
+    const rlLine = await rateLimit(`submit:line:${lineAuth.sub}`, 5, 10 * 60 * 1000);
+    if (!rlLine.ok) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: rateLimitMessage(rlLine, "ส่งเรื่องบ่อยเกินไป รอสักครู่แล้วลองใหม่"),
+          code: "RATE_LIMIT"
+        },
+        { status: rateLimitStatus(rlLine) }
       );
     }
 
-    let category = String(body.category || "");
-    const detail = String(body.detail || "");
-    if (category === "other" || category === "อื่นๆ") {
-      category = "อื่นๆ: " + (body.otherCategory || "ไม่ระบุหัวข้อ");
-    }
-    if (containsProfanity(detail) || containsProfanity(category) || containsProfanity(String(body.otherCategory || ""))) {
+    const textBlob = [
+      fields.category,
+      fields.otherCategory,
+      fields.detail,
+      fields.name,
+      fields.room,
+      fields.locationNote,
+      fields.contactOptional,
+      fields.lfSecretDetail,
+      fields.lfReturnPoint
+    ].join("\n");
+    if (containsProfanity(textBlob)) {
       return NextResponse.json(
         {
           status: "error",
@@ -57,8 +86,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rawImageUrls: string[] = Array.isArray(body.imageUrls)
-      ? body.imageUrls.map((v: unknown) => String(v))
+    const rawImageUrls: string[] = Array.isArray(source.imageUrls)
+      ? source.imageUrls.map((v: unknown) => String(v))
       : [];
     const supabaseBase = String(process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
     const allowPrefix = supabaseBase
@@ -69,44 +98,70 @@ export async function POST(req: NextRequest) {
       .filter((u: string) => {
         if (!u || u.startsWith("blob:") || u.startsWith("data:")) return false;
         if (!allowPrefix) return false;
-        return u.startsWith(allowPrefix);
+        return u.startsWith(allowPrefix) && !u.includes("..");
       })
       .slice(0, 5);
-    const submitId = String(body.submitId || "").trim();
-    if (!submitId) {
-      return NextResponse.json({ status: "error", message: "ไม่มีเลขที่แจ้ง" }, { status: 400 });
-    }
 
-    const name = body.isAnonymous ? "ไม่ประสงค์ออกนาม" : body.name || lineAuth.name || "ไม่ระบุชื่อ";
-    const room = body.isAnonymous ? "" : body.room || "";
-    const studentNo = body.isAnonymous ? "" : body.studentNo || "";
+    const name = fields.isAnonymous ? "ไม่ประสงค์ออกนาม" : fields.name || lineAuth.name || "ไม่ระบุชื่อ";
+    const room = fields.isAnonymous ? "" : fields.room;
+    const studentNo = fields.isAnonymous ? "" : fields.studentNo;
+    const submitId = fields.submitId;
 
     if (isTicketsDbReady()) {
-      const { trackToken, assignedGroup } = await createTicket({
-        submitId,
-        lineId: lineAuth.sub,
-        name,
-        room,
-        studentNo,
-        category,
-        detail,
-        imageUrls,
-        isAnonymous: !!body.isAnonymous,
-        contactOptional: body.contactOptional || "",
-        building: body.building || "",
-        zone: body.zone || "",
-        locationNote: body.locationNote || "",
-        gpsLat: body.gpsLat || "",
-        gpsLng: body.gpsLng || "",
-        lfType: body.lfType || "",
-        lfWhen: body.lfWhen || "",
-        lfReturnPoint: body.lfReturnPoint || "",
-        lfSecretDetail: body.lfSecretDetail || "",
-        isPublicShowcase: body.isPublicShowcase !== false,
-        urgency: body.urgency || "ปกติ"
-      });
+      const existing = await getTicketBySubmitId(submitId);
+      if (existing) {
+        if (existing.line_id !== lineAuth.sub) {
+          return NextResponse.json({ status: "error", message: "เลขที่แจ้งนี้ถูกใช้แล้ว" }, { status: 409 });
+        }
+        return NextResponse.json({
+          status: "success",
+          message: "บันทึกเรียบร้อย",
+          submitId,
+          trackToken: existing.track_token,
+          trackUrl: `/track/${encodeURIComponent(submitId)}?t=${existing.track_token}`
+        });
+      }
 
-      // Mirror ลง Sheets สำรอง (ไม่ยิง LINE ที่นี่)
+      let created: Awaited<ReturnType<typeof createTicket>>;
+      try {
+        created = await createTicket({
+          submitId,
+          lineId: lineAuth.sub,
+          name,
+          room,
+          studentNo,
+          category: fields.category,
+          detail: fields.detail,
+          imageUrls,
+          isAnonymous: fields.isAnonymous,
+          contactOptional: fields.contactOptional,
+          building: fields.building,
+          zone: fields.zone,
+          locationNote: fields.locationNote,
+          gpsLat: fields.gpsLat,
+          gpsLng: fields.gpsLng,
+          lfType: fields.lfType,
+          lfWhen: fields.lfWhen,
+          lfReturnPoint: fields.lfReturnPoint,
+          lfSecretDetail: fields.lfSecretDetail,
+          isPublicShowcase: fields.isPublicShowcase,
+          urgency: fields.urgency
+        });
+      } catch (err) {
+        const again = await getTicketBySubmitId(submitId).catch(() => null);
+        if (again && again.line_id === lineAuth.sub) {
+          return NextResponse.json({
+            status: "success",
+            message: "บันทึกเรียบร้อย",
+            submitId,
+            trackToken: again.track_token,
+            trackUrl: `/track/${encodeURIComponent(submitId)}?t=${again.track_token}`
+          });
+        }
+        throw err;
+      }
+      const { trackToken, assignedGroup } = created;
+
       try {
         await callGas({
           action: "mirrorSubmit",
@@ -115,22 +170,22 @@ export async function POST(req: NextRequest) {
           name,
           room,
           studentNo,
-          category,
-          detail,
+          category: fields.category,
+          detail: fields.detail,
           imageUrls,
           imageCount: imageUrls.length,
-          isAnonymous: !!body.isAnonymous,
-          contactOptional: body.contactOptional || "",
-          building: body.building || "",
-          zone: body.zone || "",
-          locationNote: body.locationNote || "",
-          gpsLat: body.gpsLat || "",
-          gpsLng: body.gpsLng || "",
-          lfType: body.lfType || "",
-          lfWhen: body.lfWhen || "",
-          lfReturnPoint: body.lfReturnPoint || "",
-          lfSecretDetail: body.lfSecretDetail || "",
-          isPublicShowcase: body.isPublicShowcase !== false,
+          isAnonymous: fields.isAnonymous,
+          contactOptional: fields.contactOptional,
+          building: fields.building,
+          zone: fields.zone,
+          locationNote: fields.locationNote,
+          gpsLat: fields.gpsLat,
+          gpsLng: fields.gpsLng,
+          lfType: fields.lfType,
+          lfWhen: fields.lfWhen,
+          lfReturnPoint: fields.lfReturnPoint,
+          lfSecretDetail: fields.lfSecretDetail,
+          isPublicShowcase: fields.isPublicShowcase,
           trackToken,
           assignedGroup,
           status: "รับเรื่องแล้ว",
@@ -145,13 +200,13 @@ export async function POST(req: NextRequest) {
         kind: "submit",
         lineId: lineAuth.sub,
         submitId,
-        category,
+        category: fields.category,
         status: "รับเรื่องแล้ว",
         trackToken,
         assignedGroup,
-        building: body.building || "",
-        zone: body.zone || "",
-        detail,
+        building: fields.building,
+        zone: fields.zone,
+        detail: fields.detail,
         trackUrl: `${siteUrl}/track/${encodeURIComponent(submitId)}`
       });
 
@@ -164,7 +219,6 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // Fallback: Sheets via GAS
     const result = await callGas({
       action: "submit",
       submitId,
@@ -172,29 +226,30 @@ export async function POST(req: NextRequest) {
       name,
       room,
       studentNo,
-      category,
-      otherCategory: body.otherCategory || "",
-      detail,
+      category: fields.category,
+      detail: fields.detail,
       imageCount: imageUrls.length,
       imageUrls,
-      isAnonymous: !!body.isAnonymous,
-      contactOptional: body.contactOptional || "",
-      building: body.building || "",
-      zone: body.zone || "",
-      locationNote: body.locationNote || "",
-      gpsLat: body.gpsLat || "",
-      gpsLng: body.gpsLng || "",
-      lfType: body.lfType || "",
-      lfWhen: body.lfWhen || "",
-      lfReturnPoint: body.lfReturnPoint || "",
-      lfSecretDetail: body.lfSecretDetail || "",
-      isPublicShowcase: !!body.isPublicShowcase,
+      isAnonymous: fields.isAnonymous,
+      contactOptional: fields.contactOptional,
+      building: fields.building,
+      zone: fields.zone,
+      locationNote: fields.locationNote,
+      gpsLat: fields.gpsLat,
+      gpsLng: fields.gpsLng,
+      lfType: fields.lfType,
+      lfWhen: fields.lfWhen,
+      lfReturnPoint: fields.lfReturnPoint,
+      lfSecretDetail: fields.lfSecretDetail,
+      isPublicShowcase: fields.isPublicShowcase,
       imageStorage: "supabase"
     });
 
     return NextResponse.json(result);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Submit failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "ส่งเรื่องไม่สำเร็จ กรุณาลองใหม่") },
+      { status: 500 }
+    );
   }
 }

@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { adminCookieName, createAdminSessionToken, nimdaModeCookieName } from "@/lib/adminSession";
+import { getClientIp } from "@/lib/clientIp";
 import { getAdminLineIds } from "@/lib/env";
 import { verifyLineIdToken } from "@/lib/lineAuth";
 import { callGas } from "@/lib/gas";
-import { rateLimit } from "@/lib/rateLimit";
+import { publicMessage } from "@/lib/publicMessage";
+import { isRateLimited, rateLimit, rateLimitMessage, rateLimitStatus } from "@/lib/rateLimit";
+import { safeEqualString } from "@/lib/safeEqual";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 
 function setSessionCookies(res: NextResponse, subject: string) {
@@ -24,7 +27,7 @@ function setSessionCookies(res: NextResponse, subject: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  const ip = getClientIp(req.headers);
 
   try {
     const body = await req.json();
@@ -33,15 +36,15 @@ export async function POST(req: NextRequest) {
     const adminPin = process.env.ADMIN_PIN || "";
     const adminLineIds = getAdminLineIds();
 
-    const guard = await rateLimit(`admin-login-guard:${ip}`, 5, 15 * 60 * 1000);
+    const guard = await rateLimit(`admin-login-guard:${ip}`, 20, 15 * 60 * 1000);
     if (!guard.ok) {
       return NextResponse.json(
         {
           status: "error",
-          message: "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+          message: rateLimitMessage(guard, "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่"),
           code: "RATE_LIMIT"
         },
-        { status: 429 }
+        { status: rateLimitStatus(guard) }
       );
     }
 
@@ -59,8 +62,23 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
+    const failKey = `admin-pin-fail:${ip}`;
+    if (await isRateLimited(failKey, 5)) {
+      return NextResponse.json(
+        {
+          status: "error",
+          message: "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่แล้วลองใหม่",
+          code: "RATE_LIMIT"
+        },
+        { status: 429 }
+      );
+    }
+
+    const pinConfigured = adminPin.length > 0;
+    const pinMatch = pinConfigured && safeEqualString(pin, adminPin);
+
     // PIN — ต้องได้ adminToken จาก GAS ก่อน; ถ้า GAS ล้มและมี Supabase SoT ค่อยอนุญาต pin:admin
-    if (pin && adminPin && pin === adminPin) {
+    if (pin && pinMatch) {
       try {
         const gas = await callGas<{ status: string; adminToken?: string; message?: string }>({
           action: "adminAuth",
@@ -88,9 +106,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (pin) await rateLimit(failKey, 5, 15 * 60 * 1000);
     return NextResponse.json({ status: "error", message: "รหัสผ่านไม่ถูกต้อง" }, { status: 403 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Login failed";
+    const message =
+      err instanceof Error && err.message.includes("ADMIN_SESSION_SECRET")
+        ? "ระบบแอดมินยังตั้งค่าไม่ครบ (ADMIN_SESSION_SECRET)"
+        : publicMessage(err, "เข้าสู่ระบบไม่สำเร็จ");
     return NextResponse.json({ status: "error", message }, { status: 500 });
   }
 }

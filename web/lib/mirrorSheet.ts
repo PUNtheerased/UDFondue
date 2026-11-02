@@ -2,6 +2,25 @@ import { callGas } from "@/lib/gas";
 import type { TicketRow } from "@/lib/ticketTypes";
 import { getHistory, getTicketBySubmitId } from "@/lib/ticketsDb";
 
+const lastUpvoteMirror = new Map<string, number>();
+const UPVOTE_MIRROR_MS = 3 * 60 * 1000;
+
+/** Sheets mirror for upvotes is throttled so a burst of votes does not burn Apps Script quota. */
+export function shouldMirrorUpvote(submitId: string) {
+  const now = Date.now();
+  const prev = lastUpvoteMirror.get(submitId) || 0;
+  if (now - prev < UPVOTE_MIRROR_MS) return false;
+  lastUpvoteMirror.set(submitId, now);
+  if (lastUpvoteMirror.size > 4000) {
+    const stale: string[] = [];
+    lastUpvoteMirror.forEach((at, key) => {
+      if (now - at >= UPVOTE_MIRROR_MS) stale.push(key);
+    });
+    stale.forEach((key) => lastUpvoteMirror.delete(key));
+  }
+  return true;
+}
+
 /** ส่งแถว tickets ไปอัปเดต Sheets (best-effort) */
 export async function mirrorTicketToSheet(submitId: string, row?: TicketRow | null) {
   try {

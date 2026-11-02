@@ -198,7 +198,7 @@ export function LostFoundClient({
               <article key={r.submitId} className="bg-white rounded-2xl border p-4 space-y-2">
                 {img && (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={img} alt="" className="w-full h-44 object-cover rounded-xl" />
+                  <img src={img} alt="รูปสิ่งของที่แจ้ง" className="w-full h-44 object-cover rounded-xl" />
                 )}
                 <p className="font-semibold">{r.detail}</p>
                 <p className="text-xs text-gray-500">

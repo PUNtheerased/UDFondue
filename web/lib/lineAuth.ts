@@ -1,4 +1,4 @@
-import { isProdRuntime } from "./runtime";
+import { allowDevLineAuth } from "./runtime";
 
 export async function verifyLineIdToken(idToken: string) {
   const channelId = process.env.LINE_CHANNEL_ID;
@@ -6,9 +6,9 @@ export async function verifyLineIdToken(idToken: string) {
     return { ok: false as const, message: "ไม่พบการเข้าสู่ระบบ LINE กรุณาเปิดใหม่จากแอป LINE" };
   }
 
-  // localhost / next dev: รับโทเค็นจำลอง แม้มี LINE_CHANNEL_ID ใน .env
+  // เฉพาะ next dev บนเครื่อง — ไม่เปิดบน Vercel แม้ NODE_ENV จะหลุด
   if (idToken.startsWith("dev:")) {
-    if (!isProdRuntime()) {
+    if (allowDevLineAuth()) {
       return {
         ok: true as const,
         sub: idToken.slice(4) || "U-TEST-USER-ID",

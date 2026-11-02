@@ -6,14 +6,12 @@
  * การ Save อย่างเดียวไม่ทำให้ Web App URL ใช้โค้ดใหม่
  */
 
-const API_VERSION = "v14-mirror-update";
+const API_VERSION = "v15-hardening";
 const SHEET_HEADERS_CACHE_KEY = "sheet_headers_v11";
 const SHEET_REPAIR_CACHE_KEY = "sheet_repair_v8";
 const LOG_COLUMNS = 9;
-const SPREADSHEET_ID = "19pIiTGsPMHbyTxULJDtiPbavmkCS07FBH2E5iHcd1KE";
 const SHEET_NAME = "UDFondue_Database";
 const LOG_SHEET_NAME = "UDFondue_Log";
-const FOLDER_ID = "1zP6mUhrI7q-Qf-bgA5c4HJwIYU6LnpyJ";
 /** อย่า hardcode secrets — ใส่ใน Script Properties */
 const LIFF_TRACK_URL = "https://liff.line.me/2010319415-VtukiTkR";
 const LIFF_REPORT_URL = "https://liff.line.me/2010319415-epnUUdNV";
@@ -45,9 +43,51 @@ function assertGasApiKey_(data) {
     throw new Error("ยังไม่ได้ตั้ง GAS_API_KEY ใน Script Properties");
   }
   const got = String((data && (data.apiKey || data.gasApiKey)) || "").trim();
-  if (!got || got !== expected) {
+  if (!got || !safeEqual_(got, expected)) {
     throw new Error("ไม่มีสิทธิ์เรียก GAS (apiKey ไม่ถูกต้อง)");
   }
+}
+
+function scriptProp_(name) {
+  return String(PropertiesService.getScriptProperties().getProperty(name) || "").trim();
+}
+
+function getSpreadsheetId_() {
+  const id = scriptProp_("SPREADSHEET_ID");
+  if (!id) throw new Error("ยังไม่ได้ตั้ง SPREADSHEET_ID ใน Script Properties");
+  return id;
+}
+
+function getDriveFolderId_() {
+  const id = scriptProp_("DRIVE_FOLDER_ID");
+  if (!id) throw new Error("ยังไม่ได้ตั้ง DRIVE_FOLDER_ID ใน Script Properties");
+  return id;
+}
+
+/** Constant-time string compare (Apps Script has no timingSafeEqual). */
+function safeEqual_(a, b) {
+  a = String(a || "");
+  b = String(b || "");
+  var max = Math.max(a.length, b.length);
+  var diff = a.length ^ b.length;
+  for (var i = 0; i < max; i++) {
+    var ca = i < a.length ? a.charCodeAt(i) : 0;
+    var cb = i < b.length ? b.charCodeAt(i) : 0;
+    diff |= ca ^ cb;
+  }
+  return diff === 0;
+}
+
+function isValidSubmitId_(id) {
+  return /^UDF-[A-Z0-9]{8}$/.test(String(id || "").trim());
+}
+
+function publicGasError_(error) {
+  var msg = String(error && error.message ? error.message : error || "");
+  if (!msg || msg.length > 180) return "คำขอไม่สำเร็จ";
+  if (/Exception|at line|password|secret|token|http|stack|ScriptError/i.test(msg)) return "คำขอไม่สำเร็จ";
+  if (/[\u0E00-\u0E7F]/.test(msg)) return msg;
+  return "คำขอไม่สำเร็จ";
 }
 
 const STATUS_OPTIONS = [
@@ -137,6 +177,29 @@ const SHEET_HEADERS = [
   "ที่เก็บรูป"
 ];
 
+var ACTIONS_ = {
+  submit: function (data, timestamp, payloadSize) { return handleSubmit_(data, timestamp, payloadSize); },
+  uploadImage: function (data, timestamp, payloadSize) { return handleUploadImage_(data, timestamp, payloadSize); },
+  notifySubmit: function (data) { return handleNotifySubmit_(data); },
+  trackList: function (data) { return handleTrackList_(data); },
+  trackDetail: function (data) { return handleTrackDetail_(data); },
+  trackPublicDetail: function (data) { return handleTrackPublicDetail_(data); },
+  trackLookup: function (data) { return handleTrackLookup_(data); },
+  getZoneActiveIssues: function (data) { return handleGetZoneActiveIssues_(data); },
+  upvoteTicket: function (data) { return handleUpvoteTicket_(data); },
+  getPublicLostFound: function (data) { return handleGetPublicLostFound_(data); },
+  adminAuth: function (data) { return handleAdminAuth_(data); },
+  adminBootstrap: function (data) { return handleAdminBootstrap_(data); },
+  adminList: function (data) { return handleAdminList_(data); },
+  adminUpdate: function (data, timestamp) { return handleAdminUpdate_(data, timestamp); },
+  adminMergeTickets: function (data, timestamp) { return handleAdminMergeTickets_(data, timestamp); },
+  adminModerationHide: function (data, timestamp) { return handleAdminModerationHide_(data, timestamp); },
+  notifyLine: function (data) { return handleNotifyLine_(data); },
+  mirrorSubmit: function (data, timestamp, payloadSize) { return handleMirrorSubmit_(data, timestamp, payloadSize); },
+  mirrorUpdate: function (data, timestamp, payloadSize) { return handleMirrorUpdate_(data, timestamp, payloadSize); },
+  adminPurgeSheet: function (data) { return handleAdminPurgeSheet_(data); }
+};
+
 function doPost(e) {
   const timestamp = new Date();
   const payloadSize = getPayloadSize_(e);
@@ -145,73 +208,12 @@ function doPost(e) {
     const data = parsePayload_(e);
     assertGasApiKey_(data);
     const action = data.action || "legacy";
-
-    if (action === "submit") {
-      return handleSubmit_(data, timestamp, payloadSize);
-    }
-    if (action === "uploadImage") {
-      return handleUploadImage_(data, timestamp, payloadSize);
-    }
-    if (action === "notifySubmit") {
-      return handleNotifySubmit_(data);
-    }
-    if (action === "trackList") {
-      return handleTrackList_(data);
-    }
-    if (action === "trackDetail") {
-      return handleTrackDetail_(data);
-    }
-    if (action === "trackPublicDetail") {
-      return handleTrackPublicDetail_(data);
-    }
-    if (action === "trackLookup") {
-      return handleTrackLookup_(data);
-    }
-    if (action === "getZoneActiveIssues") {
-      return handleGetZoneActiveIssues_(data);
-    }
-    if (action === "upvoteTicket") {
-      return handleUpvoteTicket_(data);
-    }
-    if (action === "getPublicLostFound") {
-      return handleGetPublicLostFound_(data);
-    }
-    if (action === "adminAuth") {
-      return handleAdminAuth_(data);
-    }
-    if (action === "adminBootstrap") {
-      return handleAdminBootstrap_(data);
-    }
-    if (action === "adminList") {
-      return handleAdminList_(data);
-    }
-    if (action === "adminUpdate") {
-      return handleAdminUpdate_(data, timestamp);
-    }
-    if (action === "adminMergeTickets") {
-      return handleAdminMergeTickets_(data, timestamp);
-    }
-    if (action === "adminModerationHide") {
-      return handleAdminModerationHide_(data, timestamp);
-    }
-    if (action === "notifyLine") {
-      return handleNotifyLine_(data);
-    }
-    if (action === "mirrorSubmit") {
-      return handleMirrorSubmit_(data, timestamp, payloadSize);
-    }
-    if (action === "mirrorUpdate") {
-      return handleMirrorUpdate_(data, timestamp, payloadSize);
-    }
-    if (action === "adminPurgeSheet") {
-      return handleAdminPurgeSheet_(data);
-    }
-
+    const handler = ACTIONS_[action];
+    if (handler) return handler(data, timestamp, payloadSize);
     return handleLegacy_(data, timestamp, payloadSize);
-
   } catch (error) {
     writeLog_(timestamp, payloadSize, "error", 0, 0, 0, error.toString(), "error", "");
-    return jsonResponse_({ status: "error", message: error.toString() });
+    return jsonResponse_({ status: "error", message: publicGasError_(error) });
   }
 }
 
@@ -586,7 +588,7 @@ function handleUploadImage_(data, timestamp, payloadSize) {
       errorMsg = "ข้อมูลรูปไม่ถูกต้อง";
     }
   } catch (err) {
-    errorMsg = err.toString();
+    errorMsg = publicGasError_(err);
   }
 
   if (url) {
@@ -795,11 +797,18 @@ function authenticateAdminPassword_(password) {
   if (!adminPassword) {
     return { ok: false, message: "ยังไม่ได้ตั้ง ADMIN_PASSWORD ใน Script Properties" };
   }
-  if (password !== adminPassword) {
+  const cache = CacheService.getScriptCache();
+  const fails = Number(cache.get("admin_pin_fails") || "0");
+  if (fails >= 8) {
+    return { ok: false, message: "พยายามเข้าสู่ระบบบ่อยเกินไป กรุณารอสักครู่" };
+  }
+  if (!safeEqual_(String(password || ""), adminPassword)) {
+    cache.put("admin_pin_fails", String(fails + 1), 900);
     return { ok: false, message: "รหัสผ่านไม่ถูกต้อง" };
   }
+  cache.remove("admin_pin_fails");
   const token = Utilities.getUuid();
-  CacheService.getScriptCache().put("admin_" + token, "1", ADMIN_TOKEN_TTL_SEC);
+  cache.put("admin_" + token, "1", ADMIN_TOKEN_TTL_SEC);
   return { ok: true, token: token };
 }
 
@@ -995,9 +1004,9 @@ function handleGetZoneActiveIssues_(data) {
 }
 
 function handleUpvoteTicket_(data) {
-  const submitId = data.submitId || "";
+  const submitId = String(data.submitId || "").trim().toUpperCase();
   const lineId = data.lineId || "";
-  if (!submitId || !lineId) {
+  if (!isValidSubmitId_(submitId) || !lineId) {
     return jsonResponse_({ status: "error", message: "ข้อมูลไม่ครบ" });
   }
   if (!checkLineRateLimit_(lineId, "upvote", 20, 600)) {
@@ -1052,7 +1061,7 @@ function handleTrackPublicDetail_(data) {
   }
 
   const report = rowToReportObject_(getSingleRowRange_(sheet, row, 1, SHEET_HEADERS.length).getValues()[0], row);
-  if (String(report.trackToken) !== String(trackToken)) {
+  if (!trackToken || !report.trackToken || !safeEqual_(String(trackToken), String(report.trackToken))) {
     return jsonResponse_({ status: "error", message: "ลิงก์ไม่ถูกต้อง" });
   }
   if (report.status === "REJECTED_MODERATION") {
@@ -1336,7 +1345,10 @@ function setupPermissions() {
  * แก้ lineUserId เป็น LINE User ID ของคุณ (คอลัมน์ C ใน Sheet)
  */
 function testLinePush() {
-  const lineUserId = "U5e2c33d3f48be8b6aaa6f869c7f83855";
+  const lineUserId = scriptProp_("LINE_TEST_USER_ID");
+  if (!lineUserId) {
+    throw new Error("ยังไม่ได้ตั้ง LINE_TEST_USER_ID ใน Script Properties");
+  }
   Logger.log("ทดสอบส่ง LINE ไปที่: " + lineUserId);
 
   const payload = {
@@ -1486,18 +1498,20 @@ function getOrCreateDayFolder_(rootFolder, timestamp) {
 }
 
 function getSpreadsheet_() {
+  const id = getSpreadsheetId_();
   try {
-    return SpreadsheetApp.openById(SPREADSHEET_ID);
+    return SpreadsheetApp.openById(id);
   } catch (err) {
-    throw new Error("เปิด Spreadsheet ไม่ได้ (ID: " + SPREADSHEET_ID + "): " + err.toString());
+    throw new Error("เปิด Spreadsheet ไม่ได้ — ตรวจ Script Property SPREADSHEET_ID");
   }
 }
 
 function getDriveFolder_() {
+  const id = getDriveFolderId_();
   try {
-    return DriveApp.getFolderById(FOLDER_ID);
+    return DriveApp.getFolderById(id);
   } catch (err) {
-    throw new Error("เปิดโฟลเดอร์ Drive ไม่ได้ (ID: " + FOLDER_ID + "): " + err.toString());
+    throw new Error("เปิดโฟลเดอร์ Drive ไม่ได้ — ตรวจ Script Property DRIVE_FOLDER_ID");
   }
 }
 
@@ -1539,26 +1553,51 @@ function uploadImage_(base64Image, timestamp, index) {
   const rootFolder = getDriveFolder_();
   const dayFolder = getOrCreateDayFolder_(rootFolder, timestamp);
   const splitData = base64Image.split(",");
-  const contentType = splitData[0].match(/:(.*?);/)[1];
   const rawBase64 = splitData[1];
-
   const decodedImg = Utilities.base64Decode(rawBase64);
-  let extension = contentType.split("/")[1];
-  if (extension === "jpeg") {
-    extension = "jpg";
+  const sniffed = sniffImageBytes_(decodedImg);
+  if (!sniffed) {
+    throw new Error("อัปโหลดได้เฉพาะรูป jpg, png หรือ webp");
   }
 
-  const fileName = formatTimeFile_(timestamp, index) + "." + extension;
-  const blob = Utilities.newBlob(decodedImg, contentType, fileName);
+  const fileName = formatTimeFile_(timestamp, index) + "." + sniffed.ext;
+  const blob = Utilities.newBlob(decodedImg, sniffed.mime, fileName);
   const file = dayFolder.createFile(blob);
 
-  try {
-    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
-  } catch (shareErr) {
-    // ข้ามได้
+  // รูปใหม่เป็นส่วนตัว เว้นแต่ตั้ง DRIVE_SHARE_ANYONE=1 (ของเก่ารูปสาธารณะยังอยู่)
+  if (scriptProp_("DRIVE_SHARE_ANYONE") === "1") {
+    try {
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    } catch (shareErr) {
+      // ข้ามได้
+    }
   }
 
   return "https://drive.google.com/thumbnail?id=" + file.getId() + "&sz=w1200";
+}
+
+function byteAt_(bytes, i) {
+  var b = bytes[i];
+  if (b < 0) return b + 256;
+  return b;
+}
+
+function sniffImageBytes_(bytes) {
+  if (!bytes || bytes.length < 12) return null;
+  if (byteAt_(bytes, 0) === 0xff && byteAt_(bytes, 1) === 0xd8 && byteAt_(bytes, 2) === 0xff) {
+    return { mime: "image/jpeg", ext: "jpg" };
+  }
+  if (
+    byteAt_(bytes, 0) === 0x89 && byteAt_(bytes, 1) === 0x50 && byteAt_(bytes, 2) === 0x4e &&
+    byteAt_(bytes, 3) === 0x47 && byteAt_(bytes, 4) === 0x0d && byteAt_(bytes, 5) === 0x0a &&
+    byteAt_(bytes, 6) === 0x1a && byteAt_(bytes, 7) === 0x0a
+  ) {
+    return { mime: "image/png", ext: "png" };
+  }
+  var riff = String.fromCharCode(byteAt_(bytes, 0), byteAt_(bytes, 1), byteAt_(bytes, 2), byteAt_(bytes, 3));
+  var webp = String.fromCharCode(byteAt_(bytes, 8), byteAt_(bytes, 9), byteAt_(bytes, 10), byteAt_(bytes, 11));
+  if (riff === "RIFF" && webp === "WEBP") return { mime: "image/webp", ext: "webp" };
+  return null;
 }
 
 function ensureSheetHeaders_(sheet, forWrite) {
@@ -1974,15 +2013,23 @@ function checkLineRateLimit_(lineId, action, maxCount, windowSec) {
 }
 
 function containsProfanity_(text) {
-  const t = String(text || "").toLowerCase();
+  const t = normalizeProfanity_(text);
   if (!t) return false;
-  const banned = [
-    "เหี้ย", "ควย", "เย็ด", "สัส", " fucking", "shit", "bitch", "ห่า", "หน้าหี", "ไอ้สัตว์"
-  ];
+  const banned = ["เหี้ย", "ควย", "เย็ด", "สัส", "fuck", "shit", "bitch", "ห่า", "หน้าหี", "ไอ้สัตว์", "บ้าเอ้ย"];
   for (let i = 0; i < banned.length; i++) {
-    if (banned[i] && t.indexOf(banned[i].trim()) !== -1) return true;
+    const needle = normalizeProfanity_(banned[i]);
+    if (needle && t.indexOf(needle) !== -1) return true;
   }
   return false;
+}
+
+function normalizeProfanity_(text) {
+  var s = String(text || "").toLowerCase();
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+  s = s.replace(/0/g, "o").replace(/[1!|]/g, "i").replace(/3/g, "e").replace(/[@4]/g, "a").replace(/[$5]/g, "s").replace(/7/g, "t");
+  s = s.replace(/[^0-9a-z\u0E00-\u0E7F]+/g, "");
+  s = s.replace(/(.)\1{2,}/g, "$1$1");
+  return s;
 }
 
 function appendStatusHistory_(sheet, row, status, at, by) {

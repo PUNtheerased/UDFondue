@@ -1,4 +1,6 @@
 import crypto from "crypto";
+import { safeEqualString } from "@/lib/safeEqual";
+import { adminSessionSecret } from "@/lib/sessionToken";
 import { getSupabaseAdmin, isTicketsDbReady } from "@/lib/supabaseAdmin";
 import {
   HANDOFF_CODE_TTL_MS,
@@ -30,7 +32,8 @@ export function newTrackToken() {
 }
 
 export function hashPickupCode(code: string, submitId: string) {
-  const salt = process.env.ADMIN_SESSION_SECRET || "udfondue-handoff";
+  const salt = adminSessionSecret();
+  if (!salt) throw new Error("ADMIN_SESSION_SECRET is not configured");
   return crypto.createHash("sha256").update(`${salt}:${submitId}:${code}`).digest("hex");
 }
 
@@ -94,6 +97,61 @@ export async function appendHistory(
     by_role: byRole,
     note
   });
+}
+
+function uniqueIds(submitIds: string[]) {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (let i = 0; i < submitIds.length; i++) {
+    const id = submitIds[i];
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+  }
+  return out;
+}
+
+export async function getHistoriesBySubmitIds(submitIds: string[]) {
+  const map = new Map<string, Array<{ status: string; at: string; note?: string; by?: string }>>();
+  const ids = uniqueIds(submitIds);
+  if (!ids.length) return map;
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("ticket_status_history")
+    .select("submit_id, status, note, by_role, at")
+    .in("submit_id", ids)
+    .order("at", { ascending: true });
+  if (error) throw new Error(error.message);
+  for (const h of data || []) {
+    const id = String(h.submit_id);
+    const list = map.get(id) || [];
+    list.push({
+      status: h.status as string,
+      at: h.at as string,
+      note: (h.note as string) || undefined,
+      by: (h.by_role as string) || undefined
+    });
+    map.set(id, list);
+  }
+  return map;
+}
+
+export async function getActiveHandoffsBySubmitIds(submitIds: string[]) {
+  const map = new Map<string, HandoffRow>();
+  const ids = uniqueIds(submitIds);
+  if (!ids.length) return map;
+  const sb = getSupabaseAdmin();
+  const { data, error } = await sb
+    .from("lf_handoffs")
+    .select("*")
+    .in("found_submit_id", ids)
+    .in("status", ["claimed", "code_active", "locked"])
+    .order("created_at", { ascending: false });
+  if (error) throw new Error(error.message);
+  for (const row of (data || []) as HandoffRow[]) {
+    if (!map.has(row.found_submit_id)) map.set(row.found_submit_id, row);
+  }
+  return map;
 }
 
 export async function getHistory(submitId: string) {
@@ -500,7 +558,7 @@ export async function confirmHandoffCode(foundSubmitId: string, claimantLineId: 
   }
 
   const sb = getSupabaseAdmin();
-  const ok = hashPickupCode(String(code).trim(), foundSubmitId) === handoff.code_hash;
+  const ok = safeEqualString(hashPickupCode(String(code).trim(), foundSubmitId), handoff.code_hash || "");
   if (!ok) {
     const attempts = (handoff.attempt_count || 0) + 1;
     const locked = attempts >= HANDOFF_MAX_ATTEMPTS;

@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { callGas } from "@/lib/gas";
 import { verifyLineIdToken } from "@/lib/lineAuth";
-import { isProdRuntime } from "@/lib/runtime";
+import { publicMessage } from "@/lib/publicMessage";
+import { allowDevLineAuth, isProdRuntime } from "@/lib/runtime";
+import { safeEqualString } from "@/lib/safeEqual";
 import { stripPublicReport, stripPublicReports } from "@/lib/stripPublic";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
 import {
   getActiveHandoff,
+  getActiveHandoffsBySubmitIds,
   getHandoffForUser,
+  getHistoriesBySubmitIds,
   getHistory,
   getTicketBySubmitId,
   handoffToPublic,
@@ -70,7 +74,7 @@ async function resolveViewerLineId(body: Record<string, unknown>) {
     if (!auth.ok) return { ok: false as const, message: auth.message };
     return { ok: true as const, lineId: auth.sub };
   }
-  if (!isProdRuntime() && body.lineId) {
+  if (allowDevLineAuth() && body.lineId) {
     return { ok: true as const, lineId: String(body.lineId) };
   }
   return { ok: false as const, message: "เข้าสู่ระบบ LINE ก่อน" };
@@ -89,16 +93,20 @@ export async function POST(req: NextRequest) {
         }
         const lineId = viewer.lineId;
         const rows = await listTicketsByLineId(lineId);
-        const reports = [];
-        for (const row of rows) {
+        const ids = rows.map((row) => row.submit_id);
+        const [histories, handoffs] = await Promise.all([
+          getHistoriesBySubmitIds(ids),
+          getActiveHandoffsBySubmitIds(ids)
+        ]);
+        const reports = rows.map((row) => {
           const pub = rowToPublic(row, { includeSecrets: true });
-          pub.statusHistory = await getHistory(row.submit_id);
-          const handoff = await getActiveHandoff(row.submit_id);
+          pub.statusHistory = histories.get(row.submit_id) || [];
+          const handoff = handoffs.get(row.submit_id);
           if (handoff) pub.handoff = handoffToPublic(handoff, lineId);
           const safe = stripPublicReport({ ...pub } as Record<string, unknown>);
           safe.trackToken = row.track_token;
-          reports.push(safe);
-        }
+          return safe;
+        });
         return NextResponse.json({ status: "success", reports });
       }
 
@@ -166,7 +174,7 @@ export async function POST(req: NextRequest) {
           isOwner = auth.sub === row.line_id;
         }
       }
-      const tokenOk = !!trackToken && trackToken === row.track_token;
+      const tokenOk = !!trackToken && !!row.track_token && safeEqualString(trackToken, row.track_token);
       const full = tokenOk || isOwner;
       if (tokenOk && !viewerLineId) viewerLineId = row.line_id;
 
@@ -245,7 +253,9 @@ export async function POST(req: NextRequest) {
     })) as GasTrack;
     return NextResponse.json(sanitizeTrackResult(result, false));
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Track failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "โหลดสถานะไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession, getNimdaMode } from "@/lib/adminSession";
 import { callGas } from "@/lib/gas";
 import { isTicketsDbReady } from "@/lib/supabaseAdmin";
-import { getActiveHandoff, getHistory, handoffToPublic, listAdminTickets, rowToPublic } from "@/lib/ticketsDb";
+import { publicMessage } from "@/lib/publicMessage";
+import { getActiveHandoffsBySubmitIds, getHistoriesBySubmitIds, handoffToPublic, listAdminTickets, rowToPublic } from "@/lib/ticketsDb";
 
 export async function POST(req: NextRequest) {
   const session = getAdminSession();
@@ -19,14 +20,18 @@ export async function POST(req: NextRequest) {
         filterStatus: body.filterStatus || "",
         search: body.search || ""
       });
-      const reports = [];
-      for (const row of rows) {
+      const ids = rows.map((row) => row.submit_id);
+      const [histories, handoffs] = await Promise.all([
+        getHistoriesBySubmitIds(ids),
+        getActiveHandoffsBySubmitIds(ids)
+      ]);
+      const reports = rows.map((row) => {
         const pub = rowToPublic(row, { includeSecrets: true });
-        pub.statusHistory = await getHistory(row.submit_id);
-        const handoff = await getActiveHandoff(row.submit_id);
+        pub.statusHistory = histories.get(row.submit_id) || [];
+        const handoff = handoffs.get(row.submit_id);
         if (handoff) pub.handoff = handoffToPublic(handoff);
-        reports.push(pub);
-      }
+        return pub;
+      });
       return NextResponse.json({
         status: "success",
         reports,
@@ -46,7 +51,9 @@ export async function POST(req: NextRequest) {
     });
     return NextResponse.json({ ...result, mode, backend: "gas" });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Admin bootstrap failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "โหลดรายการไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }

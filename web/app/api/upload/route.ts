@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/adminSession";
+import { getClientIp } from "@/lib/clientIp";
+import { sniffImage } from "@/lib/imageSniff";
 import { verifyLineIdToken } from "@/lib/lineAuth";
-import { rateLimit } from "@/lib/rateLimit";
+import { publicMessage } from "@/lib/publicMessage";
+import { rateLimit, rateLimitMessage, rateLimitStatus } from "@/lib/rateLimit";
 import { getSupabaseAdmin, isTicketsDbReady } from "@/lib/supabaseAdmin";
 
 export const runtime = "nodejs";
 
-const MAX_BYTES = 2.5 * 1024 * 1024; // หลัง compress ฝั่ง client โดยปกติเล็กกว่านี้
+const MAX_BYTES = 2.5 * 1024 * 1024;
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,7 +20,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+    const ip = getClientIp(req.headers);
     const form = await req.formData();
     const file = form.get("file");
     const folderRaw = String(form.get("folder") || "tickets");
@@ -39,8 +42,12 @@ export async function POST(req: NextRequest) {
     const rl = await rateLimit(`upload:${actor}:${ip}`, 30, 10 * 60 * 1000);
     if (!rl.ok) {
       return NextResponse.json(
-        { status: "error", message: "อัปโหลดบ่อยเกินไป รอสักครู่", code: "RATE_LIMIT" },
-        { status: 429 }
+        {
+          status: "error",
+          message: rateLimitMessage(rl, "อัปโหลดบ่อยเกินไป รอสักครู่"),
+          code: "RATE_LIMIT"
+        },
+        { status: rateLimitStatus(rl) }
       );
     }
 
@@ -51,29 +58,34 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: "error", message: "ไฟล์ใหญ่เกินไป" }, { status: 400 });
     }
 
-    const type = file.type || "image/jpeg";
-    if (!type.startsWith("image/")) {
-      return NextResponse.json({ status: "error", message: "อัปโหลดได้เฉพาะรูป" }, { status: 400 });
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const sniffed = sniffImage(buffer);
+    if (!sniffed) {
+      return NextResponse.json(
+        { status: "error", message: "อัปโหลดได้เฉพาะรูป jpg, png หรือ webp" },
+        { status: 400 }
+      );
     }
 
-    const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : "jpg";
-    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const path = `${folder}/${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${sniffed.ext}`;
 
     const sb = getSupabaseAdmin();
     const { error } = await sb.storage.from("udfondue-images").upload(path, buffer, {
       cacheControl: "3600",
       upsert: false,
-      contentType: type.startsWith("image/") ? type : "image/jpeg"
+      contentType: sniffed.mime
     });
     if (error) {
-      return NextResponse.json({ status: "error", message: error.message }, { status: 500 });
+      console.error("upload storage", error);
+      return NextResponse.json({ status: "error", message: "อัปโหลดรูปไม่สำเร็จ" }, { status: 500 });
     }
 
     const { data } = sb.storage.from("udfondue-images").getPublicUrl(path);
     return NextResponse.json({ status: "success", url: data.publicUrl, path });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Upload failed";
-    return NextResponse.json({ status: "error", message }, { status: 500 });
+    return NextResponse.json(
+      { status: "error", message: publicMessage(err, "อัปโหลดรูปไม่สำเร็จ") },
+      { status: 500 }
+    );
   }
 }
