@@ -10,7 +10,7 @@
 }
 
 body {
-  font-family: inherit;
+  font-family: "Anuphan", "Segoe UI", Tahoma, sans-serif;
   background: #eef2f7;
   min-height: 100dvh;
   padding-left: var(--safe-left);
