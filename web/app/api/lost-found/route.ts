@@ -3,15 +3,23 @@ import { callGas } from "@/lib/gas";
 import { publicMessage } from "@/lib/publicMessage";
 import { toPublicLostFound } from "@/lib/publicProjection";
 import { stripPublicReports } from "@/lib/stripPublic";
-import { isTicketsDbReady } from "@/lib/supabaseAdmin";
+import { getSupabaseHost, isTicketsDbReady } from "@/lib/supabaseAdmin";
 import { listPublicLostFound } from "@/lib/ticketsDb";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
 
 export async function GET(req: NextRequest) {
   try {
     const lfType = req.nextUrl.searchParams.get("lfType") || "";
     const building = req.nextUrl.searchParams.get("building") || "";
+    const dbHost = getSupabaseHost();
+    const noStore = {
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      "CDN-Cache-Control": "no-store",
+      "Vercel-CDN-Cache-Control": "no-store"
+    };
 
     // Supabase เป็นแหล่งจริง — ว่างแล้วต้องว่าง ไม่ดึง Sheet เก่ามาโชว์
     if (isTicketsDbReady()) {
@@ -21,14 +29,14 @@ export async function GET(req: NextRequest) {
         if (building) rows = rows.filter((r) => r.building === building);
         const reports = rows.map((row) => toPublicLostFound(row) as unknown as Record<string, unknown>);
         return NextResponse.json(
-          { status: "success", reports, backend: "supabase" },
-          { headers: { "Cache-Control": "no-store" } }
+          { status: "success", reports, backend: "supabase", dbHost, count: reports.length },
+          { headers: noStore }
         );
       } catch (err) {
         console.error("lost-found supabase", err);
         return NextResponse.json(
-          { status: "error", message: publicMessage(err, "โหลดกระดานของหายไม่สำเร็จ") },
-          { status: 500, headers: { "Cache-Control": "no-store" } }
+          { status: "error", message: publicMessage(err, "โหลดกระดานของหายไม่สำเร็จ"), dbHost },
+          { status: 500, headers: noStore }
         );
       }
     }

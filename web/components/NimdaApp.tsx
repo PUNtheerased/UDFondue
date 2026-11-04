@@ -221,7 +221,8 @@ export function NimdaApp() {
         data.status === "partial" || (Array.isArray(data.warnings) && data.warnings.length)
           ? " — ถ้าชีตยังไม่ถูกล้าง กระดานอาจเคยดึงของเก่าได้ (ตอนนี้ใช้แค่ Supabase แล้ว)"
           : "";
-      setToast((data.message || "ล้างฐานข้อมูลแล้ว") + extra);
+      const host = data.dbHost ? ` · DB ${data.dbHost}` : "";
+      setToast(((data.message as string) || "ล้างฐานข้อมูลแล้ว") + extra + host);
       setPurgeConfirm("");
       setSelected(null);
       await load();

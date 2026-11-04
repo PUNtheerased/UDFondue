@@ -89,7 +89,8 @@ export async function POST(req: NextRequest) {
     const rawImageUrls: string[] = Array.isArray(source.imageUrls)
       ? source.imageUrls.map((v: unknown) => String(v))
       : [];
-    const supabaseBase = String(process.env.NEXT_PUBLIC_SUPABASE_URL || "").replace(/\/$/, "");
+    const { getSupabaseUrl } = await import("@/lib/supabaseAdmin");
+    const supabaseBase = getSupabaseUrl();
     const allowPrefix = supabaseBase
       ? `${supabaseBase}/storage/v1/object/public/udfondue-images/`
       : "";
