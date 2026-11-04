@@ -7,8 +7,10 @@ import { toPublicLostFound } from "@/lib/publicProjection";
 import { stripPublicReports } from "@/lib/stripPublic";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function fetchLostFound() {
+  // Supabase เป็น SoT — ล้าง DB แล้วกระดานต้องว่าง ไม่ fallback ไป Sheet
   if (isTicketsDbReady()) {
     try {
       const rows = await listPublicLostFound();
@@ -17,7 +19,7 @@ async function fetchLostFound() {
       };
     } catch (err) {
       console.error("lost-found page supabase", err);
-      // fall through to GAS only on error
+      return { reports: [] };
     }
   }
 
