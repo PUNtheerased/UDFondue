@@ -1180,7 +1180,7 @@ function handleAdminPurgeSheet_(data) {
   if (!verifyAdminToken_(data.adminToken)) {
     return jsonResponse_({ status: "error", message: "ไม่มีสิทธิ์" });
   }
-  if (String(data.confirm || "") !== "ล้างข้อมูลทั้งหมด") {
+  if (String(data.confirm || "") !== "delete-database") {
     return jsonResponse_({ status: "error", message: "ยืนยันไม่ถูกต้อง" });
   }
   const sheet = getSheet_();

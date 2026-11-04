@@ -19,11 +19,11 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const confirm = String(body.confirm || "");
-    if (confirm !== "ล้างข้อมูลทั้งหมด") {
+    if (confirm !== "delete-database") {
       return NextResponse.json(
         {
           status: "error",
-          message: 'พิมพ์ยืนยันว่า "ล้างข้อมูลทั้งหมด" ก่อน'
+          message: 'พิมพ์ยืนยันว่า "delete-database" ก่อน'
         },
         { status: 400 }
       );

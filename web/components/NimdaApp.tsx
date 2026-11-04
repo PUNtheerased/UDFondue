@@ -198,8 +198,8 @@ export function NimdaApp() {
   }
 
   async function purgeDatabase() {
-    if (purgeConfirm !== "ล้างข้อมูลทั้งหมด") {
-      setToast('กด Auto-fill หรือพิมพ์ว่า "ล้างข้อมูลทั้งหมด" เพื่อยืนยัน');
+    if (purgeConfirm !== "delete-database") {
+      setToast('กด Auto-fill หรือพิมพ์ว่า "delete-database" เพื่อยืนยัน');
       return;
     }
     if (!window.confirm("Delete database จริง ๆ ใช่ไหม? กู้คืนไม่ได้")) return;
@@ -615,14 +615,14 @@ export function NimdaApp() {
               <div className="flex gap-2">
                 <input
                   className="flex-1 border border-red-200 rounded-xl px-3 py-2"
-                  placeholder='พิมพ์ว่า ล้างข้อมูลทั้งหมด'
+                  placeholder="พิมพ์ว่า delete-database"
                   value={purgeConfirm}
                   onChange={(e) => setPurgeConfirm(e.target.value)}
                 />
                 <button
                   type="button"
                   className="shrink-0 px-3 py-2 rounded-xl border border-red-200 text-sm font-semibold text-red-800 bg-red-50"
-                  onClick={() => setPurgeConfirm("ล้างข้อมูลทั้งหมด")}
+                  onClick={() => setPurgeConfirm("delete-database")}
                 >
                   Auto-fill
                 </button>
