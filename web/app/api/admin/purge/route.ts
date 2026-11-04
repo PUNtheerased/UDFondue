@@ -34,12 +34,37 @@ export async function POST(req: NextRequest) {
 
     if (isTicketsDbReady()) {
       const sb = getSupabaseAdmin();
-      await sb.from("lf_handoffs").delete().neq("id", "00000000-0000-0000-0000-000000000000");
-      cleared.push("lf_handoffs");
-      await sb.from("ticket_status_history").delete().gte("id", 0);
-      cleared.push("ticket_status_history");
-      await sb.from("tickets").delete().neq("submit_id", "");
-      cleared.push("tickets");
+      const steps: Array<{ label: string; run: () => PromiseLike<{ error: { message: string } | null }> }> = [
+        {
+          label: "lf_handoffs",
+          run: () => sb.from("lf_handoffs").delete().neq("id", "00000000-0000-0000-0000-000000000000")
+        },
+        {
+          label: "ticket_status_history",
+          run: () => sb.from("ticket_status_history").delete().gte("id", 0)
+        },
+        {
+          label: "tickets",
+          run: () => sb.from("tickets").delete().neq("submit_id", "")
+        }
+      ];
+      for (const step of steps) {
+        const { error } = await step.run();
+        if (error) {
+          warnings.push(`ลบ ${step.label} ไม่สำเร็จ: ${error.message}`);
+        } else {
+          cleared.push(step.label);
+        }
+      }
+      // ยืนยันว่า tickets ว่างจริง
+      const { count, error: countErr } = await sb
+        .from("tickets")
+        .select("submit_id", { count: "exact", head: true });
+      if (countErr) {
+        warnings.push(`เช็ค tickets หลังลบไม่สำเร็จ: ${countErr.message}`);
+      } else if ((count || 0) > 0) {
+        warnings.push(`ยังเหลือ tickets ใน Supabase ${count} รายการ`);
+      }
     }
 
     if (body.clearSheet) {
@@ -63,12 +88,16 @@ export async function POST(req: NextRequest) {
                 : "ล้างชีตไม่ได้: ได้ adminToken จาก GAS ไม่สำเร็จ"
             );
           } else {
-            await callGas({
+            const purged = await callGas<{ status?: string; message?: string }>({
               action: "adminPurgeSheet",
               adminToken: auth.adminToken,
               confirm
             });
-            cleared.push("sheet");
+            if (purged.status !== "success") {
+              warnings.push(purged.message || "ล้างชีตไม่สำเร็จ");
+            } else {
+              cleared.push("sheet");
+            }
           }
         }
       } catch (err) {

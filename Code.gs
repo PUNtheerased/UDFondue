@@ -1189,7 +1189,16 @@ function handleAdminPurgeSheet_(data) {
   if (last > 1) {
     sheet.deleteRows(2, last - 1);
   }
-  return jsonResponse_({ status: "success", message: "ล้างชีตแล้ว" });
+  // เคลียร์ค่าค้าง / filter view — ลบจนเหลือแถวหัวอย่างเดียว
+  const after = sheet.getLastRow();
+  if (after > 1) {
+    sheet.getRange(2, 1, after - 1, sheet.getLastColumn()).clearContent();
+  }
+  return jsonResponse_({
+    status: "success",
+    message: "ล้างชีตแล้ว",
+    rowsLeft: Math.max(0, sheet.getLastRow() - 1)
+  });
 }
 
 function sendLinePushText_(to, text, submitId) {

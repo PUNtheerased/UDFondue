@@ -304,7 +304,13 @@ export async function listPublicLostFound() {
 
 export async function listAdminTickets(opts?: { filterStatus?: string; search?: string }) {
   const sb = getSupabaseAdmin();
-  let q = sb.from("tickets").select("*").eq("merged_to_id", "").order("created_at", { ascending: false }).limit(300);
+  // รวม merged_to_id เป็น '' หรือ null — เดิม .eq("") ทำให้ Nimda ว่างแต่กระดานยังมีของ
+  let q = sb
+    .from("tickets")
+    .select("*")
+    .or("merged_to_id.eq.,merged_to_id.is.null")
+    .order("created_at", { ascending: false })
+    .limit(300);
   if (opts?.filterStatus) q = q.eq("status", opts.filterStatus);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
