@@ -34,29 +34,63 @@ export async function POST(req: NextRequest) {
 
     if (isTicketsDbReady()) {
       const sb = getSupabaseAdmin();
-      const steps: Array<{ label: string; run: () => PromiseLike<{ error: { message: string } | null }> }> = [
-        {
-          label: "lf_handoffs",
-          run: () => sb.from("lf_handoffs").delete().neq("id", "00000000-0000-0000-0000-000000000000")
-        },
-        {
-          label: "ticket_status_history",
-          run: () => sb.from("ticket_status_history").delete().gte("id", 0)
-        },
-        {
-          label: "tickets",
-          run: () => sb.from("tickets").delete().neq("submit_id", "")
-        }
-      ];
-      for (const step of steps) {
-        const { error } = await step.run();
-        if (error) {
-          warnings.push(`ลบ ${step.label} ไม่สำเร็จ: ${error.message}`);
-        } else {
-          cleared.push(step.label);
-        }
+
+      // ลบมือทีละตาราง — ดึง id ก่อนแล้วลบ (กัน filter .neq พลาด)
+      const { data: handoffRows, error: handoffListErr } = await sb.from("lf_handoffs").select("id");
+      if (handoffListErr) {
+        warnings.push(`อ่าน lf_handoffs ไม่สำเร็จ: ${handoffListErr.message}`);
+      } else if ((handoffRows || []).length) {
+        const { error } = await sb
+          .from("lf_handoffs")
+          .delete()
+          .in(
+            "id",
+            handoffRows!.map((r) => r.id as string)
+          );
+        if (error) warnings.push(`ลบ lf_handoffs ไม่สำเร็จ: ${error.message}`);
+        else cleared.push("lf_handoffs");
+      } else {
+        cleared.push("lf_handoffs");
       }
-      // ยืนยันว่า tickets ว่างจริง
+
+      const { data: histRows, error: histListErr } = await sb
+        .from("ticket_status_history")
+        .select("id");
+      if (histListErr) {
+        warnings.push(`อ่าน ticket_status_history ไม่สำเร็จ: ${histListErr.message}`);
+      } else if ((histRows || []).length) {
+        const { error } = await sb
+          .from("ticket_status_history")
+          .delete()
+          .in(
+            "id",
+            histRows!.map((r) => r.id as number)
+          );
+        if (error) warnings.push(`ลบ ticket_status_history ไม่สำเร็จ: ${error.message}`);
+        else cleared.push("ticket_status_history");
+      } else {
+        cleared.push("ticket_status_history");
+      }
+
+      const { data: ticketRows, error: ticketListErr } = await sb
+        .from("tickets")
+        .select("submit_id");
+      if (ticketListErr) {
+        warnings.push(`อ่าน tickets ไม่สำเร็จ: ${ticketListErr.message}`);
+      } else if ((ticketRows || []).length) {
+        const { error } = await sb
+          .from("tickets")
+          .delete()
+          .in(
+            "submit_id",
+            ticketRows!.map((r) => r.submit_id as string)
+          );
+        if (error) warnings.push(`ลบ tickets ไม่สำเร็จ: ${error.message}`);
+        else cleared.push("tickets");
+      } else {
+        cleared.push("tickets");
+      }
+
       const { count, error: countErr } = await sb
         .from("tickets")
         .select("submit_id", { count: "exact", head: true });
