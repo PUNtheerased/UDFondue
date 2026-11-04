@@ -199,10 +199,10 @@ export function NimdaApp() {
 
   async function purgeDatabase() {
     if (purgeConfirm !== "ล้างข้อมูลทั้งหมด") {
-      setToast('พิมพ์ว่า "ล้างข้อมูลทั้งหมด" เพื่อยืนยัน');
+      setToast('กด Auto-fill หรือพิมพ์ว่า "ล้างข้อมูลทั้งหมด" เพื่อยืนยัน');
       return;
     }
-    if (!window.confirm("ล้างฐานข้อมูลจริง ๆ ใช่ไหม? กู้คืนไม่ได้")) return;
+    if (!window.confirm("Delete database จริง ๆ ใช่ไหม? กู้คืนไม่ได้")) return;
     setBusy(true);
     try {
       const res = await fetch("/api/admin/purge", {
@@ -608,16 +608,25 @@ export function NimdaApp() {
             </button>
 
             <div className="border-t pt-4 mt-2 space-y-2">
-              <h3 className="font-bold text-red-800">ล้างฐานข้อมูล (อันตราย)</h3>
+              <h3 className="font-bold text-red-800">Delete database</h3>
               <p className="text-xs text-slate-500">
-                ลบ tickets / ประวัติ / เคลมใน Supabase — พิมพ์ยืนยันก่อนกด
+                ลบ tickets / ประวัติ / เคลมใน Supabase (+ Sheet ถ้าติ๊ก) — ยืนยันก่อนกด
               </p>
-              <input
-                className="w-full border border-red-200 rounded-xl px-3 py-2"
-                placeholder='พิมพ์ว่า ล้างข้อมูลทั้งหมด'
-                value={purgeConfirm}
-                onChange={(e) => setPurgeConfirm(e.target.value)}
-              />
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 border border-red-200 rounded-xl px-3 py-2"
+                  placeholder='พิมพ์ว่า ล้างข้อมูลทั้งหมด'
+                  value={purgeConfirm}
+                  onChange={(e) => setPurgeConfirm(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="shrink-0 px-3 py-2 rounded-xl border border-red-200 text-sm font-semibold text-red-800 bg-red-50"
+                  onClick={() => setPurgeConfirm("ล้างข้อมูลทั้งหมด")}
+                >
+                  Auto-fill
+                </button>
+              </div>
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
@@ -632,7 +641,7 @@ export function NimdaApp() {
                 className="w-full bg-red-700 text-white py-2.5 rounded-xl font-semibold disabled:opacity-50"
                 onClick={purgeDatabase}
               >
-                ล้าง database
+                Delete database
               </button>
             </div>
           </div>
