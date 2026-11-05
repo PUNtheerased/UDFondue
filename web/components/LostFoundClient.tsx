@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getClientIdToken } from "@/lib/clientLine";
 import { ensureLiff } from "@/lib/ensureLiff";
 import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
+import { formatWhenThai } from "@/lib/formatWhenThai";
 
 type Report = {
   submitId: string;
@@ -17,6 +18,7 @@ type Report = {
   lfReturnPoint?: string;
   imageUrl?: string;
   date?: string;
+  time?: string;
   status?: string;
 };
 
@@ -258,20 +260,39 @@ export function LostFoundClient({
             const img = String(r.imageUrl || "")
               .split("\n")
               .find((u) => u.startsWith("http"));
+            const place = [r.building, r.zone].filter(Boolean).join(" · ");
+            const when = formatWhenThai(r.lfWhen, r.date, r.time);
             return (
-              <article key={r.submitId} className="bg-white rounded-2xl border p-4 space-y-2">
+              <article key={r.submitId} className="bg-white rounded-2xl border p-4 space-y-3 shadow-sm">
                 {img && (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={img} alt="รูปสิ่งของที่แจ้ง" className="w-full h-44 object-cover rounded-xl" />
                 )}
-                <p className="font-semibold">{r.detail}</p>
-                <p className="text-xs text-gray-500">
-                  {r.building} / {r.zone} · {r.lfWhen || r.date}
-                </p>
-                {r.lfReturnPoint && (
-                  <p className="text-xs text-blue-800">จุดรับคืน: {r.lfReturnPoint}</p>
-                )}
-                <div className="flex flex-wrap items-center gap-2 pt-1">
+                <div>
+                  <p className="text-sm font-medium text-slate-500 mb-1">รายละเอียด</p>
+                  <p className="text-base font-semibold text-slate-900 leading-relaxed whitespace-pre-wrap">
+                    {r.detail || "—"}
+                  </p>
+                </div>
+                {place ? (
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 mb-0.5">ที่ไหน</p>
+                    <p className="text-base text-slate-800">{place}</p>
+                  </div>
+                ) : null}
+                {when ? (
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 mb-0.5">เมื่อไหร่</p>
+                    <p className="text-base text-slate-800">{when}</p>
+                  </div>
+                ) : null}
+                {r.lfReturnPoint ? (
+                  <div>
+                    <p className="text-sm font-medium text-slate-500 mb-0.5">จุดรับคืน</p>
+                    <p className="text-base text-blue-900 font-medium">{r.lfReturnPoint}</p>
+                  </div>
+                ) : null}
+                <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
                   <Link
                     href={`/track/${r.submitId}`}
                     className="text-sm text-blue-800 font-semibold"

@@ -42,9 +42,9 @@ export function StatusTimeline({
               )}
             </div>
             <div className="pb-2">
-              <p className={`text-sm font-semibold ${done ? "text-gray-900" : "text-gray-400"}`}>{step}</p>
-              {hist?.at && <p className="text-xs text-gray-400">{hist.at}</p>}
-              {hist?.note && <p className="text-xs text-gray-500 mt-0.5">{hist.note}</p>}
+              <p className={`text-base font-semibold ${done ? "text-gray-900" : "text-gray-400"}`}>{step}</p>
+              {hist?.at && <p className="text-sm text-gray-500 mt-0.5">{hist.at}</p>}
+              {hist?.note && <p className="text-sm text-gray-600 mt-0.5">{hist.note}</p>}
             </div>
           </li>
         );

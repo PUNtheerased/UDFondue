@@ -1,0 +1,12 @@
+---
+description: Always ask before deploy/push — production is live
+alwaysApply: true
+---
+
+# Ask before deploy
+
+ระบบ UDFondue **เปิดใช้งานจริงแล้ว** (ครูและนักเรียนใช้บน Vercel)
+
+- **ห้าม** `git push`, `vercel deploy`, หรือ promote production โดยไม่ถามผู้ใช้ก่อน
+- แก้โค้ดในเครื่องได้ตามปกติ — เมื่อพร้อม deploy ให้ถามชัด ๆ เช่น «จะ push ขึ้น production ไหม?»
+- อย่าถือว่า «แก้เสร็จแล้ว = deploy ได้» แม้ผู้ใช้เคยให้ push บ่อยในอดีต

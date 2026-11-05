@@ -16,15 +16,13 @@ export function stripPublicReport<T extends Record<string, unknown>>(report: T):
   for (const key of SECRET_KEYS) {
     delete out[key];
   }
+  // สาธารณะ: โชว์รายละเอียด/ที่ไหน/เมื่อไหร่/รูปได้
+  // ซ่อนเฉพาะตัวตนผู้แจ้ง + ข้อมูลลับ (ลบไปแล้วใน SECRET_KEYS)
   if (out.isPublicSummary) {
-    delete out.detail;
-    delete out.imageUrl;
-    delete out.afterImageUrl;
     delete out.adminNote;
     delete out.name;
     delete out.room;
-    delete out.locationNote;
-    // เก็บ studentNote ไว้ให้อ่านข้อความจากผู้ดูแลได้แม้โหมดสรุป
+    delete out.studentNo;
   } else if (out.isAnonymous) {
     out.name = "ไม่ประสงค์ออกนาม";
     out.room = "";

@@ -144,16 +144,25 @@ export async function POST(req: NextRequest) {
         }
         return NextResponse.json({
           status: "success",
-          report: {
+          report: stripPublicReport({
             submitId: row.submit_id,
             status: row.status,
             category: row.category,
+            detail: row.detail,
             date: row.date_th,
             time: row.time_th,
             building: row.building,
             zone: row.zone,
+            locationNote: row.location_note,
+            lfType: row.lf_type,
+            lfWhen: row.lf_when,
+            lfReturnPoint: row.lf_return_point,
+            imageUrl: row.image_url,
+            afterImageUrl: row.after_image_url,
+            studentNote: row.student_note,
+            isAnonymous: row.is_anonymous,
             isPublicSummary: true
-          }
+          })
         });
       }
 
@@ -188,21 +197,27 @@ export async function POST(req: NextRequest) {
           (handoff.claimant_line_id === viewerLineId || handoff.holder_line_id === viewerLineId);
         return NextResponse.json({
           status: "success",
-          report: {
+          report: stripPublicReport({
             submitId: row.submit_id,
             status: row.status,
             category: row.category,
+            detail: row.detail,
             lfType: row.lf_type,
+            lfWhen: row.lf_when,
+            lfReturnPoint: row.lf_return_point,
             date: row.date_th,
             time: row.time_th,
             building: row.building,
             zone: row.zone,
-            // ไม่ส่ง studentNote ในสรุปสาธารณะ
+            locationNote: row.location_note,
+            imageUrl: row.image_url,
+            afterImageUrl: row.after_image_url,
+            studentNote: row.student_note,
+            isAnonymous: row.is_anonymous,
+            // สาธารณะยังไม่โชว์ชื่อ/ห้อง — ข้อมูลลับไม่ถูกส่ง
             isPublicSummary: !isParty,
-            detail: isParty ? row.detail : undefined,
-            studentNote: isParty ? row.student_note : undefined,
             handoff: handoff && viewerLineId ? handoffToPublic(handoff, viewerLineId) : null
-          }
+          })
         });
       }
       const report = await enrichReport(submitId, viewerLineId || row.line_id, true);

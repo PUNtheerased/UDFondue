@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { STATUS_OPTIONS } from "@/constants/schoolZones";
 import { compressImageForUpload } from "@/lib/compressImage";
+import { formatWhenThai } from "@/lib/formatWhenThai";
 import { isSupabaseConfigured, uploadTicketImage } from "@/lib/supabaseClient";
 import { useTicketsRealtime } from "@/hooks/useTicketsRealtime";
 
@@ -796,7 +797,7 @@ export function NimdaApp() {
               {(selected.lfType || selected.lfWhen || selected.lfReturnPoint) && (
                 <dl className="pt-1">
                   <DetailRow label="ประเภทของหาย" value={selected.lfType} />
-                  <DetailRow label="เมื่อไร" value={selected.lfWhen} />
+                  <DetailRow label="เมื่อไร" value={formatWhenThai(selected.lfWhen, selected.date, selected.time)} />
                   <DetailRow label="จุดรับคืน" value={selected.lfReturnPoint} />
                 </dl>
               )}

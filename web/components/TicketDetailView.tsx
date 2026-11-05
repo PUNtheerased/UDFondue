@@ -1,8 +1,10 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Link from "next/link";
 import { StatusTimeline } from "@/components/StatusTimeline";
 import { HandoffPanel, HandoffInfo } from "@/components/HandoffPanel";
+import { formatWhenThai } from "@/lib/formatWhenThai";
 
 export type TrackReport = {
   submitId: string;
@@ -24,6 +26,8 @@ export type TrackReport = {
   adminNote?: string;
   studentNote?: string;
   lfType?: string;
+  lfWhen?: string;
+  lfReturnPoint?: string;
   isAnonymous?: boolean;
   isPublicSummary?: boolean;
   handoff?: HandoffInfo | null;
@@ -36,6 +40,31 @@ function splitUrls(raw?: string) {
     .filter((s) => s.startsWith("http"));
 }
 
+function Field({
+  label,
+  children
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  if (!children) return null;
+  return (
+    <div className="border-b border-slate-100 last:border-0 py-3 first:pt-0 last:pb-0">
+      <p className="text-sm font-medium text-slate-500 mb-1">{label}</p>
+      <div className="text-base text-slate-900 leading-relaxed break-words">{children}</div>
+    </div>
+  );
+}
+
+function placeText(report: TrackReport) {
+  const parts = [report.building, report.zone, report.locationNote].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "";
+}
+
+function whenText(report: TrackReport) {
+  return formatWhenThai(report.lfWhen, report.date, report.time);
+}
+
 export function TicketDetailView({
   report,
   showBackLink = true,
@@ -46,60 +75,64 @@ export function TicketDetailView({
   onRefresh?: () => void;
 }) {
   const summary = !!report.isPublicSummary;
-  const before = summary ? [] : splitUrls(report.imageUrl);
-  const after = summary ? [] : splitUrls(report.afterImageUrl);
+  const before = splitUrls(report.imageUrl);
+  const after = splitUrls(report.afterImageUrl);
   const noteToStudent = report.studentNote || report.adminNote;
+  const place = placeText(report);
+  const when = whenText(report);
+  const reporter =
+    !summary &&
+    (report.isAnonymous
+      ? "ไม่ประสงค์ออกนาม"
+      : [report.name, report.room ? `ห้อง ${report.room}` : ""].filter(Boolean).join(" · "));
 
   return (
-    <div className="min-h-dvh pb-safe">
-      <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-6 py-6">
-        <p className="text-xs text-blue-100">ติดตามสถานะ</p>
-        <h1 className="text-xl font-bold font-mono">{report.submitId}</h1>
+    <div className="min-h-dvh pb-safe bg-slate-50">
+      <header className="bg-gradient-to-r from-blue-900 to-blue-700 text-white px-5 py-5">
+        <p className="text-sm text-blue-100">ติดตามสถานะ</p>
+        <h1 className="text-2xl font-bold font-mono tracking-wide mt-1">{report.submitId}</h1>
         {showBackLink && (
-          <Link href="/track" className="inline-block mt-3 text-sm text-blue-100 underline">
+          <Link href="/track" className="inline-block mt-3 text-sm text-blue-100 underline underline-offset-2">
             ค้นหาเลขที่อื่น
           </Link>
         )}
       </header>
+
       <main className="max-w-2xl mx-auto px-4 py-5 space-y-4">
-        <section className="bg-white rounded-2xl p-4">
+        <section className="bg-white rounded-2xl p-4 shadow-sm">
           <StatusTimeline status={report.status} history={report.statusHistory} />
         </section>
-        <section className="bg-white rounded-2xl p-4 space-y-2 text-sm">
-          <p className="font-semibold text-lg">{report.category}</p>
-          {(report.building || report.zone) && (
-            <p className="text-xs text-gray-500">
-              สถานที่: {report.building}
-              {report.zone ? ` / ${report.zone}` : ""}
-              {report.locationNote ? ` · ${report.locationNote}` : ""}
-            </p>
-          )}
-          <p className="text-xs text-gray-400">
-            {report.date} {report.time}
-          </p>
-          {summary ? (
-            <div className="mt-2 rounded-xl bg-amber-50 border border-amber-100 px-3 py-2 text-xs text-amber-900 leading-relaxed">
-              เห็นแค่สถานะคร่าว ๆ — เข้าสู่ระบบ LINE ที่หน้าติดตาม หรือเปิดจากลิงก์ในแชท เพื่อดูรายละเอียด
-            </div>
-          ) : (
-            <>
-              {report.detail && (
-                <p className="text-gray-600 whitespace-pre-wrap">{report.detail}</p>
-              )}
-              <p className="text-xs text-gray-500">
-                {report.isAnonymous
-                  ? "ไม่ประสงค์ออกนาม"
-                  : `${report.name || "-"} · ห้อง ${report.room || "-"}`}
-              </p>
-            </>
-          )}
-          {noteToStudent && (
-            <div className="bg-blue-50 rounded-xl p-3">
-              <p className="text-xs font-semibold text-blue-800">ข้อความจากผู้ดูแลระบบ</p>
-              <p className="whitespace-pre-wrap">{noteToStudent}</p>
-            </div>
-          )}
+
+        <section className="bg-white rounded-2xl p-5 shadow-sm">
+          <Field label="เรื่องอะไร">
+            <span className="font-semibold text-lg">{report.category}</span>
+            {report.lfType ? (
+              <span className="block text-base text-slate-700 mt-1">{report.lfType}</span>
+            ) : null}
+          </Field>
+
+          {place ? <Field label="ที่ไหน">{place}</Field> : null}
+          {when ? <Field label="เมื่อไหร่">{when}</Field> : null}
+
+          {report.detail?.trim() ? (
+            <Field label="รายละเอียด">
+              <p className="whitespace-pre-wrap">{report.detail.trim()}</p>
+            </Field>
+          ) : null}
+
+          {report.lfReturnPoint?.trim() ? (
+            <Field label="จุดรับคืน">{report.lfReturnPoint.trim()}</Field>
+          ) : null}
+
+          {reporter ? <Field label="ผู้แจ้ง">{reporter}</Field> : null}
         </section>
+
+        {noteToStudent ? (
+          <section className="bg-blue-50 border border-blue-100 rounded-2xl p-5 shadow-sm">
+            <p className="text-sm font-semibold text-blue-900 mb-2">ข้อความจากผู้ดูแล</p>
+            <p className="text-base text-blue-950 whitespace-pre-wrap leading-relaxed">{noteToStudent}</p>
+          </section>
+        ) : null}
 
         {!summary && (
           <HandoffPanel
@@ -111,23 +144,34 @@ export function TicketDetailView({
         )}
 
         {before.length > 0 && (
-          <section className="bg-white rounded-2xl p-4 space-y-2">
-            <h2 className="font-semibold">รูปที่แนบมา</h2>
-            <div className="grid grid-cols-2 gap-2">
+          <section className="bg-white rounded-2xl p-5 space-y-3 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-800">รูปที่แนบมา</h2>
+            <div className="grid grid-cols-2 gap-3">
               {before.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="รูปที่แจ้งมา" className="rounded-xl border object-cover w-full h-40" />
+                <img
+                  key={url}
+                  src={url}
+                  alt="รูปที่แจ้งมา"
+                  className="rounded-xl border object-cover w-full h-44"
+                />
               ))}
             </div>
           </section>
         )}
+
         {after.length > 0 && (
-          <section className="bg-white rounded-2xl p-4 space-y-2">
-            <h2 className="font-semibold">รูปหลังดำเนินการ</h2>
-            <div className="grid grid-cols-2 gap-2">
+          <section className="bg-white rounded-2xl p-5 space-y-3 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-800">รูปหลังดำเนินการ</h2>
+            <div className="grid grid-cols-2 gap-3">
               {after.map((url) => (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img key={url} src={url} alt="รูปหลังดำเนินการ" className="rounded-xl border object-cover w-full h-40" />
+                <img
+                  key={url}
+                  src={url}
+                  alt="รูปหลังดำเนินการ"
+                  className="rounded-xl border object-cover w-full h-44"
+                />
               ))}
             </div>
           </section>

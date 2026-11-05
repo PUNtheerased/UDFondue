@@ -1105,17 +1105,27 @@ function toPublicTrackSummary_(report) {
   history = history.map(function (h) {
     return { status: h.status || "", at: h.at || "" };
   });
+  // สาธารณะ: โชว์รายละเอียด/ที่ไหน/เมื่อไหร่/รูป — ไม่ส่งชื่อ/ห้อง/ข้อมูลลับยืนยันเจ้าของ
   return {
     submitId: report.submitId,
     status: report.status,
     category: report.category,
+    detail: report.detail || "",
     building: report.building,
     zone: report.zone,
+    locationNote: report.locationNote || "",
     date: report.date,
     time: report.time,
+    lfType: report.lfType || "",
+    lfWhen: report.lfWhen || "",
+    lfReturnPoint: report.lfReturnPoint || "",
+    imageUrl: report.imageUrl || "",
+    afterImageUrl: report.afterImageUrl || "",
+    studentNote: report.studentNote || "",
     statusUpdated: report.statusUpdated,
     statusHistory: history,
     upvoteCount: report.upvoteCount || 0,
+    isAnonymous: report.isAnonymous,
     isPublicSummary: true
   };
 }
